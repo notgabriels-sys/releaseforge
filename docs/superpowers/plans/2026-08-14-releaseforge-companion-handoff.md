@@ -94,7 +94,7 @@ git commit -m "feat: validate companion build manifests"
 **Interfaces:**
 - Consumes: `releaseforge.compare.Packet`, `MastergateManifest | None`, `ReleaseledgerManifest | None`.
 - Produces: `Handoff`, `HandoffFinding`, `build_handoff(proof, *, mastergate=None, releaseledger=None)`, and `handoff_exit_code(handoff)`.
-- Contract: `build_handoff` requires at least one companion. It maps Releaseforge `.wav` assets to Mastergate measurements only by equal captured SHA-256. It compares Releaseledger's shared declared fields and numbered track titles without treating either declaration as verified.
+- Contract: `build_handoff` requires at least one companion. It maps Releaseforge `.wav` assets to Mastergate measurements only by equal captured SHA-256. It compares Releaseledger's shared declared fields and numbered-track coverage without treating either declaration as verified; Releaseforge proof-packet version 1 does not retain track titles.
 
 - [ ] **Step 1: Write the failing reconciliation tests**
 
@@ -115,11 +115,11 @@ def test_build_handoff_emits_needs_evidence_for_mismatched_companion_values(proo
     handoff = build_handoff(
         proof_packet,
         mastergate=load_mastergate_manifest(write_mastergate_manifest(tmp_path / "mastergate.json", sha256="b" * 64)),
-        releaseledger=load_releaseledger_manifest(write_releaseledger_manifest(tmp_path / "ledger.json", track_title="Different title")),
+        releaseledger=load_releaseledger_manifest(write_releaseledger_manifest(tmp_path / "ledger.json", release_title="Different title")),
     )
 
     assert handoff.is_aligned is False
-    assert {finding.code for finding in handoff.findings} == {"mastergate_wav_hash_unmatched", "releaseledger_track_title_mismatch"}
+    assert {finding.code for finding in handoff.findings} == {"mastergate_wav_hash_unmatched", "releaseledger_title_mismatch"}
     assert handoff_exit_code(handoff) == 1
 ```
 

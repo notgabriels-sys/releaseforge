@@ -90,9 +90,11 @@ The dossier evaluates two independent links:
    unmatched captured SHA it is `needs_evidence`.
 2. **Declared Releaseledger alignment.** It compares shared declared fields
    (`artist`, `title`, and `catalogue_number`), compares dates only when
-   Releaseledger declares one, and compares numbered track titles. Differences
-   become `needs_evidence`; matching values remain visibly declared, not
-   independently verified.
+   Releaseledger declares one, and compares only numbered-track coverage.
+   Releaseforge proof-packet version 1 does not capture track titles, so the
+   handoff must not claim a title comparison. Differences become
+   `needs_evidence`; matching values remain visibly declared, not independently
+   verified.
 
 The JSON root has `schema_version: 1`, a deterministic `handoff_id`, the
 validated Releaseforge `proof_id`, hashes of each selected companion manifest,
@@ -118,7 +120,7 @@ They will prove:
   importing either upstream package;
 - matching recorded WAV hashes and shared declarations produce an aligned
   dossier whose output contains no temporary absolute input path;
-- a mismatched captured WAV hash and a mismatched declared track create
+- a mismatched captured WAV hash and a mismatched shared release declaration create
   explicit `needs_evidence` findings and exit status `1`, rather than failing
   silently or asserting external failure;
 - unknown fields, invalid release proof IDs, unsafe/nested outputs, and output

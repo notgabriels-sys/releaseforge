@@ -9,6 +9,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from releaseforge.compare import Packet
+
 
 class HandoffError(ValueError):
     """Raised when a companion handoff input is unsafe or unsupported."""
@@ -56,6 +58,55 @@ class ReleaseledgerManifest:
     catalogue_number: str
     release_date: str | None
     tracks: tuple[ReleaseledgerTrack, ...]
+
+
+@dataclass(frozen=True)
+class HandoffFinding:
+    """One bounded discrepancy between captured companion values."""
+
+    code: str
+    severity: str
+    evidence_category: str
+    subject: str
+    message: str
+
+
+@dataclass(frozen=True)
+class MastergateLinkage:
+    """The captured SHA-256 relationship between Releaseforge WAVs and Mastergate."""
+
+    state: str
+    matched_releaseforge_wav_roles: tuple[str, ...]
+    unmatched_releaseforge_wav_roles: tuple[str, ...]
+    unmatched_mastergate_measurement_hashes: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class ReleaseledgerAlignment:
+    """The shared declared metadata relationship with a Releaseledger manifest."""
+
+    matching_fields: tuple[str, ...]
+    mismatched_fields: tuple[str, ...]
+    matching_track_numbers: tuple[int, ...]
+    missing_releaseledger_track_numbers: tuple[int, ...]
+    unmatched_releaseledger_track_numbers: tuple[int, ...]
+
+
+@dataclass(frozen=True)
+class Handoff:
+    """One local comparison of validated Releaseforge and companion captures."""
+
+    proof: Packet
+    mastergate: MastergateManifest | None
+    releaseledger: ReleaseledgerManifest | None
+    mastergate_linkage: MastergateLinkage | None
+    releaseledger_alignment: ReleaseledgerAlignment | None
+    findings: tuple[HandoffFinding, ...]
+
+    @property
+    def is_aligned(self) -> bool:
+        """Return true only when all selected captured relationships align."""
+        return not self.findings
 
 
 _MASTERGATE_FIELDS = frozenset(
@@ -158,6 +209,246 @@ def load_releaseledger_manifest(path: Path | str) -> ReleaseledgerManifest:
         ),
         tracks=tracks,
     )
+
+
+def build_handoff(
+    proof: Packet,
+    *,
+    mastergate: MastergateManifest | None = None,
+    releaseledger: ReleaseledgerManifest | None = None,
+) -> Handoff:
+    """Reconcile selected captured evidence without reading source media or paths."""
+    if mastergate is None and releaseledger is None:
+        raise HandoffError("handoff requires at least one companion manifest")
+
+    mastergate_linkage, mastergate_findings = _reconcile_mastergate(proof, mastergate)
+    releaseledger_alignment, releaseledger_findings = _reconcile_releaseledger(proof, releaseledger)
+    return Handoff(
+        proof=proof,
+        mastergate=mastergate,
+        releaseledger=releaseledger,
+        mastergate_linkage=mastergate_linkage,
+        releaseledger_alignment=releaseledger_alignment,
+        findings=tuple(mastergate_findings + releaseledger_findings),
+    )
+
+
+def handoff_exit_code(handoff: Handoff) -> int:
+    """Return the non-error status for an aligned or discrepant local handoff."""
+    return 0 if handoff.is_aligned else 1
+
+
+def _reconcile_mastergate(
+    proof: Packet, mastergate: MastergateManifest | None
+) -> tuple[MastergateLinkage | None, list[HandoffFinding]]:
+    if mastergate is None:
+        return None, []
+    wav_assets = _proof_wav_assets(proof)
+    if not wav_assets:
+        return (
+            MastergateLinkage(
+                state="not_applicable",
+                matched_releaseforge_wav_roles=(),
+                unmatched_releaseforge_wav_roles=(),
+                unmatched_mastergate_measurement_hashes=(),
+            ),
+            [],
+        )
+
+    measurement_hashes = {measurement.sha256 for measurement in mastergate.measurements}
+    proof_hashes = {sha256 for _, sha256 in wav_assets}
+    matched_roles = tuple(role for role, sha256 in wav_assets if sha256 in measurement_hashes)
+    unmatched_roles = tuple(role for role, sha256 in wav_assets if sha256 not in measurement_hashes)
+    unmatched_measurements = tuple(
+        sorted({measurement.sha256 for measurement in mastergate.measurements} - proof_hashes)
+    )
+    findings = [
+        HandoffFinding(
+            code="mastergate_wav_hash_unmatched",
+            severity="needs_evidence",
+            evidence_category="captured_companion_manifest",
+            subject=role,
+            message=(
+                "No identical captured Mastergate SHA-256 value was found for this "
+                "Releaseforge WAV asset. Review the intended handoff relationship."
+            ),
+        )
+        for role in unmatched_roles
+    ]
+    if not unmatched_roles:
+        findings.extend(
+            HandoffFinding(
+                code="mastergate_measurement_hash_unmatched",
+                severity="needs_evidence",
+                evidence_category="captured_companion_manifest",
+                subject="mastergate",
+                message=(
+                    "A captured Mastergate measurement SHA-256 value did not match a "
+                    "Releaseforge WAV asset. Review the intended handoff relationship."
+                ),
+            )
+            for _ in unmatched_measurements
+        )
+    return (
+        MastergateLinkage(
+            state="aligned" if not findings else "needs_evidence",
+            matched_releaseforge_wav_roles=matched_roles,
+            unmatched_releaseforge_wav_roles=unmatched_roles,
+            unmatched_mastergate_measurement_hashes=unmatched_measurements,
+        ),
+        findings,
+    )
+
+
+def _reconcile_releaseledger(
+    proof: Packet, releaseledger: ReleaseledgerManifest | None
+) -> tuple[ReleaseledgerAlignment | None, list[HandoffFinding]]:
+    if releaseledger is None:
+        return None, []
+    release = _proof_release(proof)
+    matching_fields: list[str] = []
+    mismatched_fields: list[str] = []
+    findings: list[HandoffFinding] = []
+    for field, companion_value, proof_value in (
+        ("artist", releaseledger.artist, release["artist"]),
+        ("title", releaseledger.title, release["title"]),
+        ("catalogue_number", releaseledger.catalogue_number, release["catalogue_number"]),
+    ):
+        _append_field_alignment(
+            field,
+            companion_value,
+            proof_value,
+            matching_fields,
+            mismatched_fields,
+            findings,
+        )
+    if releaseledger.release_date is not None:
+        _append_field_alignment(
+            "release_date",
+            releaseledger.release_date,
+            release["planned_release_date"],
+            matching_fields,
+            mismatched_fields,
+            findings,
+        )
+
+    proof_track_numbers = set(_proof_track_numbers(proof))
+    ledger_track_numbers = {track.number for track in releaseledger.tracks}
+    matching_track_numbers = tuple(sorted(proof_track_numbers & ledger_track_numbers))
+    missing_releaseledger_track_numbers = tuple(sorted(proof_track_numbers - ledger_track_numbers))
+    findings.extend(
+        HandoffFinding(
+            code="releaseledger_track_missing",
+            severity="needs_evidence",
+            evidence_category="declared",
+            subject=f"track:{number}",
+            message=(
+                "Releaseledger has no declared track at this captured Releaseforge "
+                "position. Review the intended handoff relationship."
+            ),
+        )
+        for number in missing_releaseledger_track_numbers
+    )
+    unmatched_releaseledger_track_numbers = tuple(
+        sorted(ledger_track_numbers - proof_track_numbers)
+    )
+    findings.extend(
+        HandoffFinding(
+            code="releaseledger_track_unmatched",
+            severity="needs_evidence",
+            evidence_category="declared",
+            subject=f"releaseledger-track:{number}",
+            message=(
+                "Releaseledger contains a declared numbered track with no matching "
+                "Releaseforge proof track. Review the intended handoff relationship."
+            ),
+        )
+        for number in unmatched_releaseledger_track_numbers
+    )
+    return (
+        ReleaseledgerAlignment(
+            matching_fields=tuple(matching_fields),
+            mismatched_fields=tuple(mismatched_fields),
+            matching_track_numbers=matching_track_numbers,
+            missing_releaseledger_track_numbers=missing_releaseledger_track_numbers,
+            unmatched_releaseledger_track_numbers=unmatched_releaseledger_track_numbers,
+        ),
+        findings,
+    )
+
+
+def _append_field_alignment(
+    field: str,
+    companion_value: str,
+    proof_value: str,
+    matching_fields: list[str],
+    mismatched_fields: list[str],
+    findings: list[HandoffFinding],
+) -> None:
+    if companion_value == proof_value:
+        matching_fields.append(field)
+        return
+    mismatched_fields.append(field)
+    findings.append(
+        HandoffFinding(
+            code=f"releaseledger_{field}_mismatch",
+            severity="needs_evidence",
+            evidence_category="declared",
+            subject=f"release:{field}",
+            message=(
+                "Releaseledger's declared release value does not align with the captured "
+                "Releaseforge proof. Review the intended handoff relationship."
+            ),
+        )
+    )
+
+
+def _proof_wav_assets(proof: Packet) -> tuple[tuple[str, str], ...]:
+    assets = proof.payload.get("assets")
+    if not isinstance(assets, list):
+        raise HandoffError("Releaseforge proof packet has no valid assets")
+    wav_assets: list[tuple[str, str]] = []
+    for asset in assets:
+        if not isinstance(asset, dict):
+            raise HandoffError("Releaseforge proof packet asset must be an object")
+        if asset.get("extension") != ".wav":
+            continue
+        role = asset.get("role")
+        sha256 = asset.get("sha256")
+        if not isinstance(role, str):
+            raise HandoffError("Releaseforge proof packet WAV asset has no valid role")
+        wav_assets.append((role, _sha256(sha256, "Releaseforge proof packet WAV SHA-256")))
+    return tuple(wav_assets)
+
+
+def _proof_release(proof: Packet) -> dict[str, str]:
+    release = proof.payload.get("release")
+    if not isinstance(release, dict):
+        raise HandoffError("Releaseforge proof packet has no valid release data")
+    required = ("artist", "title", "catalogue_number", "planned_release_date")
+    return {
+        field: _nonblank_string(release.get(field), f"Releaseforge proof packet release.{field}")
+        for field in required
+    }
+
+
+def _proof_track_numbers(proof: Packet) -> tuple[int, ...]:
+    assets = proof.payload.get("assets")
+    if not isinstance(assets, list):
+        raise HandoffError("Releaseforge proof packet has no valid assets")
+    tracks: list[int] = []
+    for asset in assets:
+        if not isinstance(asset, dict):
+            raise HandoffError("Releaseforge proof packet asset must be an object")
+        role = asset.get("role")
+        if not isinstance(role, str) or not role.startswith("track:"):
+            continue
+        try:
+            number = int(role.removeprefix("track:"))
+        except ValueError as error:
+            raise HandoffError("Releaseforge proof packet track role is invalid") from error
+        tracks.append(number)
+    return tuple(sorted(set(tracks)))
 
 
 def _load_json_object(path: Path | str, label: str) -> tuple[dict[str, Any], str]:
