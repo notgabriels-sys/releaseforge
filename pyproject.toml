@@ -36,5 +36,9 @@ target-version = "py311"
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
 
+[tool.ruff.lint.per-file-ignores]
+# Embedded offline CSS and HTML are more readable as literal template lines.
+"src/releaseforge/report.py" = ["E501"]
+
 [tool.setuptools.packages.find]
 where = ["src"]
