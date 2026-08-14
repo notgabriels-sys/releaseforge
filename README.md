@@ -185,7 +185,7 @@ python3 -m pip install -e '.[dev]'
 python3 -m pytest -q
 python3 -m ruff check src tests
 python3 -m ruff format --check src tests
-python3 -m build --no-isolation
+python3 -m build
 ```
 
 ## License

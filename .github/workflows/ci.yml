@@ -34,4 +34,4 @@ jobs:
       - name: Compile package
         run: python -m compileall -q src
       - name: Build distribution artifacts
-        run: python -m build --no-isolation
+        run: python -m build
