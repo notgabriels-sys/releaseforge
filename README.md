@@ -25,8 +25,8 @@ automatic platform-compliance tool.
 - optionally writes a separate Markdown, JSON, and offline HTML comparison
   packet for a reviewer, while default comparison remains read-only;
 - can reconcile one validated Releaseforge proof packet with selected
-  Mastergate- and/or Releaseledger-compatible version-1 manifest captures,
-  then write a separate local companion-handoff packet;
+  Mastergate-, Releaseledger-, and/or Coverforge-compatible version-1 manifest
+  captures, then write a separate local companion-handoff packet;
 - creates an optional two-version synthetic demo that exercises the same local
   proof and comparison path without touching a real release folder;
 - never uploads, copies, renames, deletes, or modifies a declared source asset.
@@ -130,24 +130,26 @@ the write confirmation goes to stderr.
 
 ## Companion handoff
 
-If a handoff already has a Releaseforge proof packet and either a passing
-Mastergate-compatible capture or a Releaseledger-compatible capture, create
-one separate review dossier:
+If a handoff already has a Releaseforge proof packet and one or more compatible
+Mastergate, Releaseledger, or Coverforge captures, create one separate review
+dossier:
 
 ```bash
 releaseforge handoff /path/to/release-proof \
   --mastergate /path/to/mastergate-evidence/manifest.json \
   --releaseledger /path/to/releaseledger-dossier/manifest.json \
+  --coverforge /path/to/coverforge-delivery/manifest.json \
   --output /path/to/release-handoff
 ```
 
-`--mastergate` and `--releaseledger` are individually optional, but at least
-one is required. They accept only the known, portable version-1
-`manifest.json` schema shapes used by the companion tools. Releaseforge hashes
-the supplied manifest bytes and validates that shape; this identifies only the
-local bytes selected for the handoff, not the source program or whether an
-upstream build ran. The handoff does not install, import, or call either tool;
-it reads the existing JSON capture locally.
+`--mastergate`, `--releaseledger`, and `--coverforge` are individually
+optional, but at least one is required. They accept only the known, portable
+version-1 `manifest.json` schema shapes used by the companion tools.
+Releaseforge hashes the supplied manifest bytes and validates that shape; this
+identifies only the local bytes selected for the handoff, not the source
+program or whether an upstream build ran. For Coverforge, it also validates the
+manifest's deterministic capture ID. The handoff does not install, import, or
+call any companion tool; it reads the existing JSON captures locally.
 
 The output directory must be new and must sit outside the Releaseforge proof
 packet directory and every selected companion-manifest directory. It contains:
@@ -163,6 +165,10 @@ The handoff checks only limited relationships that are present in the captures:
 - shared declared release fields align only when Releaseforge and Releaseledger
   record the same artist, title, catalogue number, and, when supplied by
   Releaseledger, date;
+- Coverforge's captured source cover aligns only when its SHA-256, byte size,
+  dimensions, and image mode all match the Releaseforge proof cover; selected
+  targets that Coverforge recorded as skipped, and outputs it recorded as over
+  its configured size cap, remain explicit `needs_evidence` items;
 - version-1 Releaseforge proof packets do not include track titles, so the
   handoff compares numbered-track coverage only and never claims title
   alignment.

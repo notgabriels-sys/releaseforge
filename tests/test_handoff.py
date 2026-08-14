@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from releaseforge.cli import main
-from releaseforge.compare import Packet
+from releaseforge.compare import Packet, load_packet
 from releaseforge.config import load_plan
 from releaseforge.coverforge import load_coverforge_manifest
 from releaseforge.evaluate import evaluate_release
@@ -259,6 +259,59 @@ def test_handoff_cli_writes_an_aligned_packet(
     assert result == 0
     assert (output_dir / "RELEASE_HANDOFF.json").is_file()
     assert "Wrote release handoff packet" in capsys.readouterr().out
+
+
+def test_handoff_cli_writes_an_aligned_coverforge_packet(
+    synthetic_release: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+):
+    proof_dir = _write_proof_packet(synthetic_release, tmp_path / "proof")
+    proof = load_packet(proof_dir)
+    cover = _proof_cover_asset(proof)
+    manifest = _write_coverforge_manifest(
+        tmp_path / "coverforge-input" / "manifest.json",
+        source_sha256=cover["sha256"],
+        source_bytes=cover["byte_size"],
+        source_dimensions=f"{cover['width']}x{cover['height']}",
+        source_mode=cover["image_mode"],
+    )
+    output_dir = tmp_path / "handoff"
+
+    result = main(
+        [
+            "handoff",
+            str(proof_dir),
+            "--coverforge",
+            str(manifest),
+            "--output",
+            str(output_dir),
+        ]
+    )
+
+    assert result == 0
+    assert (output_dir / "RELEASE_HANDOFF.json").is_file()
+    assert "Wrote release handoff packet" in capsys.readouterr().out
+
+
+def test_handoff_cli_refuses_output_inside_coverforge_manifest_parent(
+    synthetic_release: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+):
+    proof_dir = _write_proof_packet(synthetic_release, tmp_path / "proof")
+    manifest = _write_coverforge_manifest(tmp_path / "coverforge-input" / "manifest.json")
+
+    result = main(
+        [
+            "handoff",
+            str(proof_dir),
+            "--coverforge",
+            str(manifest),
+            "--output",
+            str(manifest.parent / "handoff"),
+        ]
+    )
+
+    assert result == 2
+    assert "outside input packet directories" in capsys.readouterr().err
+    assert not (manifest.parent / "handoff").exists()
 
 
 def test_handoff_cli_requires_a_companion_manifest(
