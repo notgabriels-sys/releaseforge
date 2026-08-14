@@ -100,6 +100,77 @@ def test_compare_accepts_a_direct_json_path_and_can_emit_json(tmp_path, capsys):
     assert payload["change_count"] == 0
 
 
+def test_compare_can_write_a_portable_packet_without_changing_inputs(tmp_path, capsys):
+    before = _packet(write_synthetic_release(tmp_path / "before"), tmp_path / "before-packet")
+    after = _packet(
+        write_synthetic_release(tmp_path / "after", rights_review="declared_pending"),
+        tmp_path / "after-packet",
+    )
+    before_digest = tree_digest(before)
+    after_digest = tree_digest(after)
+    output_dir = tmp_path / "comparison"
+
+    assert main(["compare", str(before), str(after), "--output", str(output_dir)]) == 1
+
+    assert {path.name for path in output_dir.iterdir()} == {
+        "RELEASE_COMPARISON.md",
+        "RELEASE_COMPARISON.json",
+        "RELEASE_COMPARISON.html",
+    }
+    assert "Wrote comparison packet" in capsys.readouterr().out
+    assert tree_digest(before) == before_digest
+    assert tree_digest(after) == after_digest
+
+
+def test_compare_json_output_stays_machine_readable_when_writing(tmp_path, capsys):
+    before = _packet(write_synthetic_release(tmp_path / "before"), tmp_path / "before-packet")
+    after = _packet(
+        write_synthetic_release(tmp_path / "after", rights_review="declared_pending"),
+        tmp_path / "after-packet",
+    )
+
+    assert (
+        main(
+            [
+                "compare",
+                str(before),
+                str(after),
+                "--json",
+                "--output",
+                str(tmp_path / "comparison"),
+            ]
+        )
+        == 1
+    )
+
+    captured = capsys.readouterr()
+    assert json.loads(captured.out)["equivalent"] is False
+    assert "Wrote comparison packet" in captured.err
+
+
+def test_compare_refuses_to_write_inside_an_input_packet(tmp_path, capsys):
+    before = _packet(write_synthetic_release(tmp_path / "before"), tmp_path / "before-packet")
+    after = _packet(
+        write_synthetic_release(tmp_path / "after", rights_review="declared_pending"),
+        tmp_path / "after-packet",
+    )
+
+    assert (
+        main(
+            [
+                "compare",
+                str(before / "RELEASE_PROOF.json"),
+                str(after / "RELEASE_PROOF.json"),
+                "--output",
+                str(before / "changes"),
+            ]
+        )
+        == 2
+    )
+
+    assert "outside input proof packet" in capsys.readouterr().err
+
+
 def test_demo_creates_a_synthetic_end_to_end_flow(tmp_path, capsys):
     destination = tmp_path / "demo"
 

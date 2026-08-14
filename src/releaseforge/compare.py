@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from collections.abc import Mapping
 from dataclasses import dataclass
+from html import escape
 from pathlib import Path, PurePosixPath
 from typing import Any, Literal
 
@@ -85,6 +87,11 @@ _ASSET_FIELDS = frozenset(
 _FINDING_FIELDS = frozenset({"code", "severity", "evidence_category", "message", "subject"})
 _DECISION_FIELDS = frozenset(
     {"state", "profile_checked", "blocker_count", "warning_count", "needs_evidence_count"}
+)
+_COMPARISON_BOUNDARY = (
+    "This comparison records captured differences between two local proof packets. "
+    "It does not establish approval, ownership, rights, distributor acceptance, "
+    "release readiness, or which packet is correct."
 )
 
 
@@ -184,7 +191,7 @@ def comparison_payload(comparison: Comparison) -> dict[str, Any]:
         category: sum(change.category == category for change in comparison.changes)
         for category in _CATEGORY_ORDER
     }
-    return {
+    payload = {
         "schema_version": 1,
         "before_proof_id": comparison.before_proof_id,
         "after_proof_id": comparison.after_proof_id,
@@ -202,6 +209,20 @@ def comparison_payload(comparison: Comparison) -> dict[str, Any]:
             for change in comparison.changes
         ],
     }
+    payload["comparison_id"] = comparison_id(payload)
+    return payload
+
+
+def comparison_id(payload: Mapping[str, Any]) -> str:
+    """Return a stable identifier for comparison content excluding its own ID field."""
+    canonical_payload = {key: value for key, value in payload.items() if key != "comparison_id"}
+    encoded = json.dumps(
+        canonical_payload,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
+    return f"rfc_{hashlib.sha256(encoded).hexdigest()[:20]}"
 
 
 def render_comparison_text(comparison: Comparison) -> str:
@@ -222,6 +243,150 @@ def render_comparison_text(comparison: Comparison) -> str:
         lines.append(f"  before: {_display_value(change['before'])}")
         lines.append(f"  after:  {_display_value(change['after'])}")
     return "\n".join(lines)
+
+
+def render_comparison_markdown(comparison: Comparison) -> str:
+    """Render a portable review record from one captured comparison model."""
+    payload = comparison_payload(comparison)
+    lines = [
+        "# Releaseforge local proof comparison",
+        "",
+        f"**Comparison ID: `{payload['comparison_id']}`**",
+        "",
+        f"> **Boundary:** {_markdown_value(_COMPARISON_BOUNDARY)}",
+        "",
+        "## Captured packets",
+        "",
+        "| Before proof ID | After proof ID |",
+        "| --- | --- |",
+        f"| `{payload['before_proof_id']}` | `{payload['after_proof_id']}` |",
+        "",
+        "## Result",
+        "",
+        "| Equivalent captured content | Captured changes |",
+        "| --- | ---: |",
+        f"| {payload['equivalent']} | {payload['change_count']} |",
+        "",
+        "## Captured changes",
+        "",
+    ]
+    if payload["equivalent"]:
+        lines.append("No captured differences were emitted.")
+        return "\n".join(lines)
+
+    lines.extend(
+        [
+            "| Evidence category | Subject | Change | Before | After |",
+            "| --- | --- | --- | --- | --- |",
+        ]
+    )
+    for change in payload["changes"]:
+        lines.append(
+            "| "
+            f"{_markdown_value(change['category'])} | "
+            f"{_markdown_value(change['subject'])} | "
+            f"{_markdown_value(change['code'])} | "
+            f"{_markdown_value(change['before'])} | "
+            f"{_markdown_value(change['after'])} |"
+        )
+    return "\n".join(lines)
+
+
+def render_comparison_html(comparison: Comparison) -> str:
+    """Render one self-contained offline comparison review surface."""
+    payload = comparison_payload(comparison)
+    result = "Equivalent captured content" if payload["equivalent"] else "Captured changes"
+    state_class = "equivalent" if payload["equivalent"] else "changed"
+    if payload["changes"]:
+        change_rows = "".join(_comparison_html_row(change) for change in payload["changes"])
+    else:
+        change_rows = '<tr><td colspan="5">No captured differences were emitted.</td></tr>'
+    return f"""<!doctype html>
+<html lang=\"en\">
+<head>
+  <meta charset=\"utf-8\">
+  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">
+  <title>Releaseforge comparison {escape(payload["comparison_id"])}</title>
+  <style>
+    :root {{ color-scheme: dark; --ink: #101116; --surface: #181a21; --bone: #f1ede3; --muted: #aaa79f; --line: #343844; --accent: #bf9a63; --changed: #e5ba68; --ok: #8fcda0; }}
+    * {{ box-sizing: border-box; }}
+    body {{ margin: 0; background: radial-gradient(circle at top right, #24212d 0, var(--ink) 40rem); color: var(--bone); font: 16px/1.5 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }}
+    main {{ max-width: 1120px; margin: 0 auto; padding: 48px 24px 72px; }}
+    header {{ border-bottom: 1px solid var(--line); padding-bottom: 28px; margin-bottom: 28px; }}
+    .eyebrow {{ color: var(--accent); font-size: .75rem; letter-spacing: .13em; text-transform: uppercase; }}
+    h1 {{ margin: 8px 0 10px; font: 600 clamp(2rem, 6vw, 4.75rem)/.95 system-ui, sans-serif; letter-spacing: -.06em; }}
+    h2 {{ margin: 40px 0 12px; font: 600 1rem/1.2 system-ui, sans-serif; letter-spacing: .02em; text-transform: uppercase; }}
+    p {{ color: var(--muted); max-width: 76ch; }}
+    .result {{ display: inline-flex; border: 1px solid var(--line); padding: .55rem .75rem; background: var(--surface); }}
+    .result.changed {{ color: var(--changed); }}
+    .result.equivalent {{ color: var(--ok); }}
+    .boundary {{ border-left: 3px solid var(--accent); background: #1d1b1b; padding: 14px 16px; }}
+    table {{ width: 100%; border-collapse: collapse; background: rgba(24, 26, 33, .78); }}
+    th, td {{ text-align: left; vertical-align: top; padding: 11px 12px; border: 1px solid var(--line); }}
+    th {{ color: var(--muted); font-size: .72rem; font-weight: 500; text-transform: uppercase; letter-spacing: .08em; }}
+    td {{ font-size: .86rem; }}
+    code {{ color: #dcc6a1; word-break: break-all; }}
+    footer {{ margin-top: 48px; padding-top: 20px; border-top: 1px solid var(--line); color: var(--muted); font-size: .8rem; }}
+    @media (max-width: 720px) {{ main {{ padding: 28px 14px 48px; }} table {{ display: block; overflow-x: auto; }} }}
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <div class=\"eyebrow\">Local proof comparison · offline packet</div>
+      <h1>{escape(result)}</h1>
+      <p>Comparison ID: <code>{escape(payload["comparison_id"])}</code></p>
+      <div class=\"result {state_class}\">{escape(result)} · {payload["change_count"]} change(s)</div>
+    </header>
+
+    <section class=\"boundary\"><strong>Boundary.</strong> {escape(_COMPARISON_BOUNDARY)}</section>
+
+    <h2>Captured packets</h2>
+    <table>
+      <thead><tr><th>Before proof ID</th><th>After proof ID</th></tr></thead>
+      <tbody><tr><td><code>{escape(payload["before_proof_id"])}</code></td><td><code>{escape(payload["after_proof_id"])}</code></td></tr></tbody>
+    </table>
+
+    <h2>Captured changes</h2>
+    <table>
+      <thead><tr><th>Evidence category</th><th>Subject</th><th>Change</th><th>Before</th><th>After</th></tr></thead>
+      <tbody>{change_rows}</tbody>
+    </table>
+
+    <footer>Generated locally by Releaseforge. It contains no source files and makes no external network request.</footer>
+  </main>
+</body>
+</html>
+"""
+
+
+def write_comparison_packet(
+    comparison: Comparison,
+    output_dir: Path | str,
+    *,
+    protected_roots: tuple[Path | str, ...] = (),
+) -> Path:
+    """Write one new portable comparison packet outside its input proof packet trees."""
+    output_path = Path(output_dir).resolve()
+    _reject_protected_output(output_path, protected_roots)
+    if output_path.exists():
+        raise ComparisonError(f"comparison output directory already exists: {output_path.name}")
+    try:
+        output_path.mkdir(parents=True, exist_ok=False)
+        (output_path / "RELEASE_COMPARISON.md").write_text(
+            render_comparison_markdown(comparison), encoding="utf-8"
+        )
+        (output_path / "RELEASE_COMPARISON.json").write_text(
+            json.dumps(comparison_payload(comparison), ensure_ascii=False, indent=2, sort_keys=True)
+            + "\n",
+            encoding="utf-8",
+        )
+        (output_path / "RELEASE_COMPARISON.html").write_text(
+            render_comparison_html(comparison), encoding="utf-8"
+        )
+    except OSError as error:
+        raise ComparisonError(f"could not write comparison packet: {error}") from error
+    return output_path
 
 
 def _validate_packet_payload(payload: Any) -> None:
@@ -463,6 +628,17 @@ def _validate_fields(mapping: Mapping[str, Any], label: str, expected: frozenset
         raise ComparisonError(f"{label} is missing a required field")
 
 
+def _reject_protected_output(output_path: Path, protected_roots: tuple[Path | str, ...]) -> None:
+    for root in protected_roots:
+        try:
+            output_path.relative_to(Path(root).resolve())
+        except ValueError:
+            continue
+        raise ComparisonError(
+            "comparison output directory must be outside input proof packet directories"
+        )
+
+
 def _asset_map(assets: list[Any]) -> dict[str, dict[str, Any]]:
     return {asset["role"]: asset for asset in assets}
 
@@ -485,6 +661,22 @@ def _finding_summary(finding: dict[str, Any]) -> dict[str, str]:
         "evidence_category": finding["evidence_category"],
         "subject": finding["subject"],
     }
+
+
+def _comparison_html_row(change: dict[str, Any]) -> str:
+    return (
+        "<tr>"
+        f"<td>{escape(str(change['category']))}</td>"
+        f"<td>{escape(str(change['subject']))}</td>"
+        f"<td>{escape(str(change['code']))}</td>"
+        f"<td><code>{escape(_display_value(change['before']))}</code></td>"
+        f"<td><code>{escape(_display_value(change['after']))}</code></td>"
+        "</tr>"
+    )
+
+
+def _markdown_value(value: object | None) -> str:
+    return escape(_display_value(value), quote=False).replace("|", "\\|").replace("\n", " ")
 
 
 def _declaration_value(value: Any) -> str | None:

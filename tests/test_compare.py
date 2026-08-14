@@ -4,12 +4,22 @@ import json
 
 import pytest
 
-from releaseforge.compare import ComparisonError, compare_packets, comparison_payload, load_packet
+from releaseforge.compare import (
+    Change,
+    Comparison,
+    ComparisonError,
+    compare_packets,
+    comparison_payload,
+    load_packet,
+    render_comparison_html,
+    render_comparison_markdown,
+    write_comparison_packet,
+)
 from releaseforge.config import load_plan
 from releaseforge.evaluate import evaluate_release
 from releaseforge.inspect import inspect_release
 from releaseforge.report import make_report, packet_proof_id, write_packet
-from tests.helpers import write_synthetic_release
+from tests.helpers import tree_digest, write_synthetic_release
 
 
 def _packet(release_dir, output_dir):
@@ -104,3 +114,93 @@ def test_comparison_payload_omits_packet_source_paths(tmp_path):
     payload = comparison_payload(compare_packets(load_packet(before), load_packet(after)))
 
     assert str(tmp_path) not in json.dumps(payload, sort_keys=True)
+
+
+def test_comparison_payload_has_a_stable_comparison_id(tmp_path):
+    before = _packet(write_synthetic_release(tmp_path / "before"), tmp_path / "before-packet")
+    after = _packet(
+        write_synthetic_release(tmp_path / "after", rights_review="declared_pending"),
+        tmp_path / "after-packet",
+    )
+    comparison = compare_packets(load_packet(before), load_packet(after))
+
+    first = comparison_payload(comparison)
+    second = comparison_payload(comparison)
+
+    assert first["comparison_id"] == second["comparison_id"]
+    assert first["comparison_id"].startswith("rfc_")
+
+
+def test_write_comparison_packet_creates_three_portable_outputs(tmp_path):
+    before = _packet(write_synthetic_release(tmp_path / "before"), tmp_path / "before-packet")
+    after = _packet(
+        write_synthetic_release(tmp_path / "after", rights_review="declared_pending"),
+        tmp_path / "after-packet",
+    )
+    comparison = compare_packets(load_packet(before), load_packet(after))
+
+    output = write_comparison_packet(
+        comparison,
+        tmp_path / "comparison",
+        protected_roots=(before, after),
+    )
+
+    assert {path.name for path in output.iterdir()} == {
+        "RELEASE_COMPARISON.md",
+        "RELEASE_COMPARISON.json",
+        "RELEASE_COMPARISON.html",
+    }
+    assert comparison_payload(comparison)["comparison_id"] in (
+        output / "RELEASE_COMPARISON.md"
+    ).read_text(encoding="utf-8")
+    for path in output.iterdir():
+        assert str(tmp_path) not in path.read_text(encoding="utf-8")
+
+
+def test_write_comparison_packet_refuses_an_existing_or_protected_output(tmp_path):
+    before = _packet(write_synthetic_release(tmp_path / "before"), tmp_path / "before-packet")
+    after = _packet(
+        write_synthetic_release(tmp_path / "after", rights_review="declared_pending"),
+        tmp_path / "after-packet",
+    )
+    comparison = compare_packets(load_packet(before), load_packet(after))
+    existing = tmp_path / "existing"
+    existing.mkdir()
+    before_digest = tree_digest(before)
+    after_digest = tree_digest(after)
+
+    with pytest.raises(ComparisonError, match="already exists"):
+        write_comparison_packet(comparison, existing, protected_roots=(before, after))
+    with pytest.raises(ComparisonError, match="outside input proof packet"):
+        write_comparison_packet(
+            comparison,
+            before / "comparison",
+            protected_roots=(before, after),
+        )
+
+    assert tree_digest(before) == before_digest
+    assert tree_digest(after) == after_digest
+
+
+def test_comparison_html_escapes_captured_values():
+    comparison = Comparison(
+        before_proof_id="rfp_before",
+        after_proof_id="rfp_after",
+        changes=(
+            Change(
+                code="release_value_changed",
+                category="declared_release",
+                subject="title",
+                before="<unsafe-before>",
+                after="<unsafe-after>",
+            ),
+        ),
+    )
+
+    markdown = render_comparison_markdown(comparison)
+    html = render_comparison_html(comparison)
+
+    assert "&lt;unsafe-before&gt;" in html
+    assert "<unsafe-before>" not in html
+    assert "rfc_" in markdown
+    assert "https://" not in html

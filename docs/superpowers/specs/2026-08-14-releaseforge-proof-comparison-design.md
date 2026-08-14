@@ -24,7 +24,8 @@ claim that the later packet is correct, licensed, accepted, or ready to publish.
    except the `proof_id` field itself. Identical packet content always has the
    same ID; any captured packet-content change produces a different ID.
 2. `releaseforge compare BEFORE AFTER` accepts either two packet directories
-   or two `RELEASE_PROOF.json` files. It is read-only.
+   or two `RELEASE_PROOF.json` files. It is read-only by default; explicit
+   `--output CHANGE_DIR` writes a new comparison packet outside both inputs.
 3. It validates JSON shape and checks that each stored proof ID matches the
    packet content before comparing it.
 4. It reports a stable list of categorized changes:
@@ -34,8 +35,10 @@ claim that the later packet is correct, licensed, accepted, or ready to publish.
    - supplied declaration-state changes;
    - decision and finding changes.
 5. Human output is concise by default; `--json` prints a machine-readable
-   comparison. Exit code `0` means packets are equivalent, `1` means one or
-   more captured changes exist, and `2` means input or integrity failure.
+   comparison. `--output` writes Markdown, JSON, and offline HTML from the
+   same model. Exit code `0` means packets are equivalent, `1` means one or
+   more captured changes exist, and `2` means input, integrity, or unsafe-output
+   failure.
 
 ## Non-goals
 
@@ -50,8 +53,9 @@ claim that the later packet is correct, licensed, accepted, or ready to publish.
 - `report.py` gains a canonical-payload helper and embeds the proof ID in each
   generated packet.
 - `compare.py` loads and validates local JSON packets, creates immutable
-  `Change` and `Comparison` models, and renders a stable human/JSON result.
-- `cli.py` gains a read-only `compare` command. Existing `init`, `check`, and
+  `Change` and `Comparison` models, and renders stable human/JSON/HTML results.
+- `cli.py` gains a read-only-by-default `compare` command with an explicit,
+  protected comparison-packet output mode. Existing `init`, `check`, and
   `build` behavior stays unchanged.
 
 ## Acceptance criteria

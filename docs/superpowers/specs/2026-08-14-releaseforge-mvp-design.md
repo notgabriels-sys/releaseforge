@@ -61,6 +61,9 @@ path.
 7. After a revision, `releaseforge compare BEFORE_PROOF AFTER_PROOF` validates
    both packet content IDs and reports which verified asset facts, declarations,
    workflow rules, decisions, or findings changed. It never reads source media.
+   With an explicit `--output CHANGE_DIR`, it also creates a new portable
+   comparison packet outside both input proof packet directories; plain compare
+   remains read-only.
 
 ## Input contract
 
@@ -119,6 +122,12 @@ network requests, no analytics, no embedded credentials, and no external
 assets. Its visual hierarchy prioritizes the release decision, blockers,
 evidence boundaries, track/asset facts, and next review actions.
 
+`compare --output` writes a separate `RELEASE_COMPARISON.md`,
+`RELEASE_COMPARISON.json`, and `RELEASE_COMPARISON.html` directory only when
+the destination is new and outside both input proof packet directories. The
+comparison record has a deterministic content ID, but it is not a signature,
+approval, provenance claim, or answer to which revision is correct.
+
 ## Deliberate non-goals for v0.1
 
 - no audio transcoding, mastering, or DSP loudness claim;
@@ -142,7 +151,8 @@ The Python package is split into small pure layers:
 4. `report.py` serializes one report model as Markdown, JSON, and a static
    HTML document, including a deterministic proof ID.
 5. `compare.py` validates packet content IDs and derives a categorized,
-   source-path-free difference model without reading source media.
+   source-path-free difference model without reading source media. Its explicit
+   writer renders that model as a protected portable comparison packet.
 6. `demo.py` generates a synthetic two-version trial through the same public
    release-proof layers, with no access to a user's source media.
 7. `cli.py` owns `demo`, `init`, read-only `check`, non-overwriting `build`,
@@ -166,6 +176,9 @@ by design.
 - `compare` distinguishes verified asset changes from declared review changes,
   uses stable content IDs, returns the documented exit status, and rejects
   unsafe absolute asset paths or mismatching IDs.
+- `compare --output` preserves input proof packets, refuses an existing or
+  nested output directory, and writes path-free Markdown, JSON, and HTML
+  comparison records with valid JSON stdout when requested.
 - `demo` refuses an existing destination, creates two synthetic proof packets,
   and yields a path-free captured cover change through `compare`.
 - Tests cover parser failures, file inspection, evaluation, every output

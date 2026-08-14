@@ -22,6 +22,8 @@ automatic platform-compliance tool.
   `RELEASE_READINESS.html` document;
 - assigns each packet a deterministic content ID and compares two packets by
   verified facts, declarations, workflow profile, decision, and findings;
+- optionally writes a separate Markdown, JSON, and offline HTML comparison
+  packet for a reviewer, while default comparison remains read-only;
 - creates an optional two-version synthetic demo that exercises the same local
   proof and comparison path without touching a real release folder;
 - never uploads, copies, renames, deletes, or modifies a declared source asset.
@@ -105,6 +107,7 @@ may be a packet directory or a direct `RELEASE_PROOF.json` path:
 ```bash
 releaseforge compare /path/to/proof-before /path/to/proof-after
 releaseforge compare /path/to/proof-before /path/to/proof-after --json
+releaseforge compare /path/to/proof-before /path/to/proof-after --output /path/to/comparison
 ```
 
 `compare` reads only the packet JSON, validates the packet content ID and
@@ -112,6 +115,15 @@ source-path boundary, then reports captured changes. It returns `0` for
 equivalent captured content, `1` when there are differences, and `2` for an
 invalid packet or a mismatching content ID. It does not read source media,
 choose which packet is correct, or establish approval.
+
+Without `--output`, `compare` creates no files. With `--output`, it creates a
+new directory outside both input packet directories containing
+`RELEASE_COMPARISON.md`, `RELEASE_COMPARISON.json`, and
+`RELEASE_COMPARISON.html`. The comparison record has a deterministic
+`comparison_id`; it is a content identifier, not a cryptographic signature,
+proof of authorship, approval, or a verdict about which revision is correct.
+When `--json` and `--output` are used together, stdout remains valid JSON and
+the write confirmation goes to stderr.
 
 ## Pilot
 

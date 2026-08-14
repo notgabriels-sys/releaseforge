@@ -14,6 +14,7 @@ from releaseforge.compare import (
     comparison_payload,
     load_packet,
     render_comparison_text,
+    write_comparison_packet,
 )
 from releaseforge.config import ConfigError, load_plan
 from releaseforge.demo import DemoError, create_demo
@@ -60,7 +61,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command == "demo":
         return _demo(Path(args.destination))
     if args.command == "compare":
-        return _compare(Path(args.before), Path(args.after), as_json=args.as_json)
+        output = Path(args.output) if args.output else None
+        return _compare(Path(args.before), Path(args.after), as_json=args.as_json, output=output)
 
     try:
         report = _load_report(Path(args.release_dir))
@@ -117,6 +119,9 @@ def _parser() -> argparse.ArgumentParser:
     compare_parser.add_argument(
         "--json", dest="as_json", action="store_true", help="print machine-readable JSON"
     )
+    compare_parser.add_argument(
+        "--output", "-o", help="new comparison directory outside both input proof packets"
+    )
     return parser
 
 
@@ -158,10 +163,17 @@ def _load_report(release_dir: Path) -> Report:
     return make_report(plan, inspection, evaluate_release(plan, inspection))
 
 
-def _compare(before: Path, after: Path, *, as_json: bool) -> int:
+def _compare(before: Path, after: Path, *, as_json: bool, output: Path | None) -> int:
     """Compare two existing packet captures without reading or writing source media."""
     try:
         comparison = compare_packets(load_packet(before), load_packet(after))
+        comparison_packet = None
+        if output is not None:
+            comparison_packet = write_comparison_packet(
+                comparison,
+                output,
+                protected_roots=(_proof_packet_root(before), _proof_packet_root(after)),
+            )
     except ComparisonError as error:
         _error(str(error))
         return 2
@@ -171,7 +183,17 @@ def _compare(before: Path, after: Path, *, as_json: bool) -> int:
         )
     else:
         print(render_comparison_text(comparison))
+    if comparison_packet is not None:
+        print(
+            f"Wrote comparison packet: {comparison_packet.name}",
+            file=sys.stderr if as_json else sys.stdout,
+        )
     return 0 if comparison.is_equal else 1
+
+
+def _proof_packet_root(requested: Path) -> Path:
+    resolved = requested.resolve()
+    return resolved if resolved.is_dir() else resolved.parent
 
 
 def _print_summary(report: Report) -> None:
