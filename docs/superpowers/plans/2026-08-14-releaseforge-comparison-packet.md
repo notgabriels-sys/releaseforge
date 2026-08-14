@@ -38,5 +38,5 @@ codes.
   README and MVP design.
 - [x] Run full tests, lint, formatting, compile, package build, safety scans,
   and a fresh-wheel output smoke test.
-- [ ] Commit, push, update the live draft PR description, and verify the remote
+- [x] Commit, push, update the live draft PR description, and verify the remote
   head/status.
