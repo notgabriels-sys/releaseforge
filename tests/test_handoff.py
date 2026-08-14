@@ -13,8 +13,10 @@ from releaseforge.handoff import (
     HandoffError,
     build_handoff,
     handoff_exit_code,
+    handoff_payload,
     load_mastergate_manifest,
     load_releaseledger_manifest,
+    write_handoff_packet,
 )
 from releaseforge.inspect import inspect_release
 from releaseforge.report import make_report, report_payload
@@ -85,6 +87,52 @@ def test_build_handoff_emits_needs_evidence_for_mismatched_companion_values(
     }
     assert {finding.severity for finding in handoff.findings} == {"needs_evidence"}
     assert handoff_exit_code(handoff) == 1
+
+
+def test_write_handoff_packet_omits_input_paths_and_escapes_html(
+    synthetic_release: Path, tmp_path: Path
+):
+    proof = _proof_packet(synthetic_release)
+    proof.payload["release"]["title"] = "<script>alert(1)</script>"
+    handoff = build_handoff(
+        proof,
+        mastergate=load_mastergate_manifest(
+            _write_mastergate_manifest(tmp_path / "mastergate.json", sha256=_proof_track_sha(proof))
+        ),
+    )
+    destination = tmp_path / "handoff-output"
+
+    write_handoff_packet(handoff, destination, protected_roots=(tmp_path / "proof",))
+
+    html = (destination / "RELEASE_HANDOFF.html").read_text(encoding="utf-8")
+    payload = json.loads((destination / "RELEASE_HANDOFF.json").read_text(encoding="utf-8"))
+    assert sorted(path.name for path in destination.iterdir()) == [
+        "RELEASE_HANDOFF.html",
+        "RELEASE_HANDOFF.json",
+        "RELEASE_HANDOFF.md",
+    ]
+    assert str(tmp_path) not in html
+    assert "&lt;script&gt;alert(1)&lt;/script&gt;" in html
+    assert "<script>alert(1)</script>" not in html
+    assert payload["handoff_id"].startswith("rfh_")
+    assert payload["handoff_id"] == handoff_payload(handoff)["handoff_id"]
+
+
+def test_write_handoff_packet_refuses_output_inside_an_input_tree(
+    synthetic_release: Path, tmp_path: Path
+):
+    proof = _proof_packet(synthetic_release)
+    handoff = build_handoff(
+        proof,
+        mastergate=load_mastergate_manifest(
+            _write_mastergate_manifest(tmp_path / "mastergate.json", sha256=_proof_track_sha(proof))
+        ),
+    )
+    protected_root = tmp_path / "proof"
+    protected_root.mkdir()
+
+    with pytest.raises(HandoffError, match="outside input packet directories"):
+        write_handoff_packet(handoff, protected_root / "handoff", protected_roots=(protected_root,))
 
 
 def _write_mastergate_manifest(path: Path, *, sha256: str = "a" * 64) -> Path:

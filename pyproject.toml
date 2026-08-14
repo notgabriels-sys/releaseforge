@@ -40,6 +40,7 @@ select = ["E", "F", "I", "UP", "B", "SIM"]
 # Embedded offline CSS and HTML are more readable as literal template lines.
 "src/releaseforge/report.py" = ["E501"]
 "src/releaseforge/compare.py" = ["E501"]
+"src/releaseforge/handoff.py" = ["E501"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

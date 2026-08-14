@@ -5,7 +5,9 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+from collections.abc import Mapping
 from dataclasses import dataclass
+from html import escape
 from pathlib import Path
 from typing import Any
 
@@ -156,6 +158,12 @@ _RELEASELEDGER_FILES = (
     "manifest.json",
     "tracks.csv",
 )
+_HANDOFF_BOUNDARY = (
+    "This handoff records relationships between a validated Releaseforge proof packet "
+    "and selected local companion manifests. It does not establish current-file "
+    "verification, approval, ownership, rights, external delivery, distributor "
+    "acceptance, or release readiness."
+)
 
 
 def load_mastergate_manifest(path: Path | str) -> MastergateManifest:
@@ -236,6 +244,334 @@ def build_handoff(
 def handoff_exit_code(handoff: Handoff) -> int:
     """Return the non-error status for an aligned or discrepant local handoff."""
     return 0 if handoff.is_aligned else 1
+
+
+def handoff_payload(handoff: Handoff) -> dict[str, Any]:
+    """Return a deterministic, path-free handoff record from selected captures."""
+    proof_assets = handoff.proof.payload.get("assets")
+    if not isinstance(proof_assets, list):
+        raise HandoffError("Releaseforge proof packet has no valid assets")
+    payload: dict[str, Any] = {
+        "schema_version": 1,
+        "boundary": _HANDOFF_BOUNDARY,
+        "releaseforge": {
+            "proof_id": handoff.proof.proof_id,
+            "release": _proof_release(handoff.proof),
+            "decision": _proof_decision(handoff.proof),
+            "captured_asset_count": len(proof_assets),
+        },
+        "mastergate": _mastergate_payload(handoff),
+        "releaseledger": _releaseledger_payload(handoff),
+        "findings": [
+            {
+                "code": finding.code,
+                "severity": finding.severity,
+                "evidence_category": finding.evidence_category,
+                "subject": finding.subject,
+                "message": finding.message,
+            }
+            for finding in handoff.findings
+        ],
+    }
+    payload["handoff_id"] = handoff_id(payload)
+    return payload
+
+
+def handoff_id(payload: Mapping[str, Any]) -> str:
+    """Return a stable identifier for handoff content excluding its own ID field."""
+    canonical_payload = {key: value for key, value in payload.items() if key != "handoff_id"}
+    encoded = json.dumps(
+        canonical_payload,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
+    return f"rfh_{hashlib.sha256(encoded).hexdigest()[:20]}"
+
+
+def render_handoff_markdown(handoff: Handoff) -> str:
+    """Render a portable handoff review record without input locations."""
+    payload = handoff_payload(handoff)
+    release = payload["releaseforge"]["release"]
+    decision = payload["releaseforge"]["decision"]
+    lines = [
+        "# Releaseforge local companion handoff",
+        "",
+        f"**Handoff ID: `{payload['handoff_id']}`**",
+        "",
+        f"> **Boundary:** {_markdown_value(_HANDOFF_BOUNDARY)}",
+        "",
+        "## Releaseforge proof capture",
+        "",
+        "| Field | Captured value |",
+        "| --- | --- |",
+        f"| Proof ID | `{_markdown_value(payload['releaseforge']['proof_id'])}` |",
+        f"| Artist | {_markdown_value(release['artist'])} |",
+        f"| Title | {_markdown_value(release['title'])} |",
+        f"| Catalogue number | {_markdown_value(release['catalogue_number'])} |",
+        f"| Planned release date | {_markdown_value(release['planned_release_date'])} |",
+        f"| Local decision | {_markdown_value(decision['state'])} |",
+        f"| Captured assets | {payload['releaseforge']['captured_asset_count']} |",
+        "",
+        "## Companion captures",
+        "",
+    ]
+    lines.extend(_markdown_companion_lines(payload))
+    lines.extend(["", "## Handoff findings", ""])
+    if payload["findings"]:
+        lines.extend(
+            [
+                "| Severity | Subject | Evidence category | Finding |",
+                "| --- | --- | --- | --- |",
+            ]
+        )
+        lines.extend(
+            "| {severity} | {subject} | {evidence} | {message} |".format(
+                severity=_markdown_value(finding["severity"]),
+                subject=_markdown_value(finding["subject"]),
+                evidence=_markdown_value(finding["evidence_category"]),
+                message=_markdown_value(finding["message"]),
+            )
+            for finding in payload["findings"]
+        )
+    else:
+        lines.append("No captured relationship discrepancy was emitted.")
+    return "\n".join(lines) + "\n"
+
+
+def render_handoff_html(handoff: Handoff) -> str:
+    """Render one self-contained offline handoff review surface."""
+    payload = handoff_payload(handoff)
+    release = payload["releaseforge"]["release"]
+    decision = payload["releaseforge"]["decision"]
+    findings = payload["findings"]
+    finding_rows = "".join(
+        _html_row(
+            finding["severity"],
+            finding["subject"],
+            finding["evidence_category"],
+            finding["message"],
+        )
+        for finding in findings
+    )
+    if not finding_rows:
+        finding_rows = (
+            '<tr><td colspan="4">No captured relationship discrepancy was emitted.</td></tr>'
+        )
+    companion_rows = "".join(_html_companion_rows(payload))
+    return f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Releaseforge handoff {escape(str(payload["handoff_id"]))}</title>
+  <style>
+    :root {{ color-scheme: dark; --ink: #101116; --surface: #181a21; --bone: #f1ede3; --muted: #aaa79f; --line: #343844; --accent: #bf9a63; --warn: #e5ba68; --ok: #8fcda0; }}
+    * {{ box-sizing: border-box; }}
+    body {{ margin: 0; background: radial-gradient(circle at top right, #24212d 0, var(--ink) 40rem); color: var(--bone); font: 16px/1.5 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }}
+    main {{ max-width: 1120px; margin: 0 auto; padding: 48px 24px 72px; }}
+    header {{ border-bottom: 1px solid var(--line); padding-bottom: 28px; margin-bottom: 28px; }}
+    .eyebrow {{ color: var(--accent); font-size: .75rem; letter-spacing: .13em; text-transform: uppercase; }}
+    h1 {{ margin: 8px 0 10px; font: 600 clamp(2rem, 6vw, 4.75rem)/.95 system-ui, sans-serif; letter-spacing: -.06em; }}
+    h2 {{ margin: 40px 0 12px; font: 600 1rem/1.2 system-ui, sans-serif; letter-spacing: .02em; text-transform: uppercase; }}
+    p {{ color: var(--muted); max-width: 76ch; }}
+    .boundary {{ border-left: 3px solid var(--accent); background: #1d1b1b; padding: 14px 16px; }}
+    table {{ width: 100%; border-collapse: collapse; background: rgba(24, 26, 33, .78); }}
+    th, td {{ text-align: left; vertical-align: top; padding: 11px 12px; border: 1px solid var(--line); }}
+    th {{ color: var(--muted); font-size: .72rem; font-weight: 500; text-transform: uppercase; letter-spacing: .08em; }}
+    td {{ font-size: .86rem; }}
+    code {{ color: #dcc6a1; word-break: break-all; }}
+    .state {{ color: {"var(--ok)" if handoff.is_aligned else "var(--warn)"}; }}
+    footer {{ margin-top: 48px; padding-top: 20px; border-top: 1px solid var(--line); color: var(--muted); font-size: .8rem; }}
+    @media (max-width: 720px) {{ main {{ padding: 28px 14px 48px; }} table {{ display: block; overflow-x: auto; }} }}
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <div class="eyebrow">Local companion evidence · offline packet</div>
+      <h1>{escape(str(release["title"]))}</h1>
+      <p>{escape(str(release["artist"]))} · {escape(str(release["catalogue_number"]))} · planned {escape(str(release["planned_release_date"]))}</p>
+      <p class="state">{"Aligned captured relationships" if handoff.is_aligned else "Needs evidence review"}</p>
+      <p>Handoff ID: <code>{escape(str(payload["handoff_id"]))}</code></p>
+    </header>
+
+    <section class="boundary"><strong>Boundary.</strong> {escape(_HANDOFF_BOUNDARY)}</section>
+
+    <h2>Releaseforge proof capture</h2>
+    <table>
+      <thead><tr><th>Proof ID</th><th>Local decision</th><th>Captured assets</th></tr></thead>
+      <tbody><tr><td><code>{escape(str(payload["releaseforge"]["proof_id"]))}</code></td><td>{escape(str(decision["state"]))}</td><td>{payload["releaseforge"]["captured_asset_count"]}</td></tr></tbody>
+    </table>
+
+    <h2>Companion captures</h2>
+    <table>
+      <thead><tr><th>Capture</th><th>Manifest SHA-256</th><th>Recorded relationship</th></tr></thead>
+      <tbody>{companion_rows}</tbody>
+    </table>
+
+    <h2>Handoff findings</h2>
+    <table>
+      <thead><tr><th>Severity</th><th>Subject</th><th>Evidence category</th><th>Finding</th></tr></thead>
+      <tbody>{finding_rows}</tbody>
+    </table>
+
+    <footer>Generated locally by Releaseforge. It contains no source files and makes no external network request.</footer>
+  </main>
+</body>
+</html>
+"""
+
+
+def write_handoff_packet(
+    handoff: Handoff,
+    output_dir: Path | str,
+    *,
+    protected_roots: tuple[Path | str, ...] = (),
+) -> Path:
+    """Write one new portable handoff packet outside all input packet trees."""
+    output_path = Path(output_dir).resolve()
+    _reject_protected_output(output_path, protected_roots)
+    if output_path.exists():
+        raise HandoffError(f"handoff output directory already exists: {output_path.name}")
+    try:
+        output_path.mkdir(parents=True, exist_ok=False)
+        (output_path / "RELEASE_HANDOFF.md").write_text(
+            render_handoff_markdown(handoff), encoding="utf-8"
+        )
+        (output_path / "RELEASE_HANDOFF.json").write_text(
+            json.dumps(handoff_payload(handoff), ensure_ascii=False, indent=2, sort_keys=True)
+            + "\n",
+            encoding="utf-8",
+        )
+        (output_path / "RELEASE_HANDOFF.html").write_text(
+            render_handoff_html(handoff), encoding="utf-8"
+        )
+    except OSError as error:
+        raise HandoffError(f"could not write handoff packet: {error}") from error
+    return output_path
+
+
+def _mastergate_payload(handoff: Handoff) -> dict[str, Any] | None:
+    if handoff.mastergate is None:
+        return None
+    assert handoff.mastergate_linkage is not None
+    linkage = handoff.mastergate_linkage
+    return {
+        "manifest_sha256": handoff.mastergate.manifest_sha256,
+        "captured_measurement_count": len(handoff.mastergate.measurements),
+        "linkage": {
+            "state": linkage.state,
+            "matched_releaseforge_wav_roles": list(linkage.matched_releaseforge_wav_roles),
+            "unmatched_releaseforge_wav_roles": list(linkage.unmatched_releaseforge_wav_roles),
+            "unmatched_mastergate_measurement_hashes": list(
+                linkage.unmatched_mastergate_measurement_hashes
+            ),
+        },
+    }
+
+
+def _releaseledger_payload(handoff: Handoff) -> dict[str, Any] | None:
+    if handoff.releaseledger is None:
+        return None
+    assert handoff.releaseledger_alignment is not None
+    alignment = handoff.releaseledger_alignment
+    return {
+        "manifest_sha256": handoff.releaseledger.manifest_sha256,
+        "alignment": {
+            "matching_fields": list(alignment.matching_fields),
+            "mismatched_fields": list(alignment.mismatched_fields),
+            "matching_track_numbers": list(alignment.matching_track_numbers),
+            "missing_releaseledger_track_numbers": list(
+                alignment.missing_releaseledger_track_numbers
+            ),
+            "unmatched_releaseledger_track_numbers": list(
+                alignment.unmatched_releaseledger_track_numbers
+            ),
+        },
+    }
+
+
+def _proof_decision(proof: Packet) -> dict[str, Any]:
+    decision = proof.payload.get("decision")
+    if not isinstance(decision, dict):
+        raise HandoffError("Releaseforge proof packet has no valid decision data")
+    state = _nonblank_string(decision.get("state"), "Releaseforge proof packet decision.state")
+    return {"state": state}
+
+
+def _markdown_companion_lines(payload: dict[str, Any]) -> list[str]:
+    lines: list[str] = []
+    mastergate = payload["mastergate"]
+    if mastergate is not None:
+        linkage = mastergate["linkage"]
+        lines.extend(
+            [
+                "### Mastergate capture",
+                "",
+                f"- Manifest SHA-256: `{mastergate['manifest_sha256']}`",
+                f"- Captured measurements: {mastergate['captured_measurement_count']}",
+                f"- Captured WAV linkage: {_markdown_value(linkage['state'])}",
+                f"- Matched Releaseforge WAV roles: {_markdown_value(linkage['matched_releaseforge_wav_roles'])}",
+                f"- Unmatched Releaseforge WAV roles: {_markdown_value(linkage['unmatched_releaseforge_wav_roles'])}",
+            ]
+        )
+    releaseledger = payload["releaseledger"]
+    if releaseledger is not None:
+        alignment = releaseledger["alignment"]
+        lines.extend(
+            [
+                "### Releaseledger capture",
+                "",
+                f"- Manifest SHA-256: `{releaseledger['manifest_sha256']}`",
+                f"- Matching declared fields: {_markdown_value(alignment['matching_fields'])}",
+                f"- Mismatched declared fields: {_markdown_value(alignment['mismatched_fields'])}",
+                f"- Matching track numbers: {_markdown_value(alignment['matching_track_numbers'])}",
+            ]
+        )
+    return lines or ["No companion capture was supplied."]
+
+
+def _html_companion_rows(payload: dict[str, Any]) -> list[str]:
+    rows: list[str] = []
+    mastergate = payload["mastergate"]
+    if mastergate is not None:
+        linkage = mastergate["linkage"]
+        rows.append(
+            _html_row(
+                "Mastergate build manifest",
+                mastergate["manifest_sha256"],
+                f"{linkage['state']}; matched WAV roles: {', '.join(linkage['matched_releaseforge_wav_roles']) or 'none'}",
+            )
+        )
+    releaseledger = payload["releaseledger"]
+    if releaseledger is not None:
+        alignment = releaseledger["alignment"]
+        rows.append(
+            _html_row(
+                "Releaseledger build manifest",
+                releaseledger["manifest_sha256"],
+                "matching declared fields: " + (", ".join(alignment["matching_fields"]) or "none"),
+            )
+        )
+    return rows or ['<tr><td colspan="3">No companion capture was supplied.</td></tr>']
+
+
+def _html_row(*values: object) -> str:
+    return f"<tr>{''.join(f'<td>{escape(str(value))}</td>' for value in values)}</tr>"
+
+
+def _markdown_value(value: object) -> str:
+    return escape(str(value), quote=False).replace("|", "\\|").replace("\n", " ")
+
+
+def _reject_protected_output(output_path: Path, protected_roots: tuple[Path | str, ...]) -> None:
+    for root in protected_roots:
+        try:
+            output_path.relative_to(Path(root).resolve())
+        except ValueError:
+            continue
+        raise HandoffError("handoff output directory must be outside input packet directories")
 
 
 def _reconcile_mastergate(
