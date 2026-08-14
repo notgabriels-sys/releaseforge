@@ -57,9 +57,17 @@ def write_synthetic_release(
     cover_size: tuple[int, int] = (3000, 3000),
     cover_mode: str = "RGB",
     duration_seconds: float = 1.0,
+    rights_review: str = "declared_current",
+    metadata_review: str = "declared_current",
+    artwork_approval: str = "declared_current",
 ) -> Path:
     """Create one valid local release folder for file-inspection tests."""
-    root = write_plan(release_dir)
+    root = write_plan(
+        release_dir,
+        rights_review=rights_review,
+        metadata_review=metadata_review,
+        artwork_approval=artwork_approval,
+    )
     artwork_dir = root / "artwork"
     audio_dir = root / "audio"
     artwork_dir.mkdir(exist_ok=True)
