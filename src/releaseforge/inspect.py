@@ -121,6 +121,10 @@ def _read_wav_facts(path: Path, relative_path: PurePosixPath) -> dict[str, int |
         with wave.open(str(path), "rb") as source:
             frame_rate = source.getframerate()
             frame_count = source.getnframes()
+            if frame_rate <= 0:
+                raise InspectionError(
+                    f"WAV track has an invalid frame rate: {relative_path.as_posix()}"
+                )
             return {
                 "duration_seconds": frame_count / frame_rate,
                 "sample_rate": frame_rate,
