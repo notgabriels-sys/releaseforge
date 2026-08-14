@@ -19,6 +19,15 @@ from releaseforge.compare import (
 from releaseforge.config import ConfigError, load_plan
 from releaseforge.demo import DemoError, create_demo
 from releaseforge.evaluate import evaluate_release
+from releaseforge.handoff import (
+    HandoffError,
+    build_handoff,
+    handoff_exit_code,
+    handoff_payload,
+    load_mastergate_manifest,
+    load_releaseledger_manifest,
+    write_handoff_packet,
+)
 from releaseforge.inspect import InspectionError, inspect_release
 from releaseforge.report import Report, ReportError, make_report, report_payload, write_packet
 
@@ -63,6 +72,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command == "compare":
         output = Path(args.output) if args.output else None
         return _compare(Path(args.before), Path(args.after), as_json=args.as_json, output=output)
+    if args.command == "handoff":
+        mastergate = Path(args.mastergate) if args.mastergate else None
+        releaseledger = Path(args.releaseledger) if args.releaseledger else None
+        return _handoff(
+            Path(args.proof_packet),
+            mastergate=mastergate,
+            releaseledger=releaseledger,
+            output=Path(args.output),
+        )
 
     try:
         report = _load_report(Path(args.release_dir))
@@ -121,6 +139,18 @@ def _parser() -> argparse.ArgumentParser:
     )
     compare_parser.add_argument(
         "--output", "-o", help="new comparison directory outside both input proof packets"
+    )
+
+    handoff_parser = commands.add_parser(
+        "handoff", help="write a local companion-evidence handoff packet"
+    )
+    handoff_parser.add_argument("proof_packet", help="proof packet directory or RELEASE_PROOF.json")
+    handoff_parser.add_argument("--mastergate", help="direct Mastergate build manifest.json path")
+    handoff_parser.add_argument(
+        "--releaseledger", help="direct Releaseledger build manifest.json path"
+    )
+    handoff_parser.add_argument(
+        "--output", "-o", required=True, help="new handoff directory outside every input packet"
     )
     return parser
 
@@ -189,6 +219,45 @@ def _compare(before: Path, after: Path, *, as_json: bool, output: Path | None) -
             file=sys.stderr if as_json else sys.stdout,
         )
     return 0 if comparison.is_equal else 1
+
+
+def _handoff(
+    proof_packet: Path,
+    *,
+    mastergate: Path | None,
+    releaseledger: Path | None,
+    output: Path,
+) -> int:
+    """Create one local companion-evidence handoff packet from existing captures."""
+    if mastergate is None and releaseledger is None:
+        _error("handoff requires at least one companion manifest")
+        return 2
+    try:
+        proof = load_packet(proof_packet)
+        handoff = build_handoff(
+            proof,
+            mastergate=load_mastergate_manifest(mastergate) if mastergate else None,
+            releaseledger=load_releaseledger_manifest(releaseledger) if releaseledger else None,
+        )
+        protected_roots: tuple[Path, ...] = (_proof_packet_root(proof_packet),)
+        if mastergate is not None:
+            protected_roots += (mastergate.resolve().parent,)
+        if releaseledger is not None:
+            protected_roots += (releaseledger.resolve().parent,)
+        packet = write_handoff_packet(handoff, output, protected_roots=protected_roots)
+    except (ComparisonError, HandoffError) as error:
+        _error(str(error))
+        return 2
+
+    payload = handoff_payload(handoff)
+    print("LOCAL COMPANION HANDOFF")
+    print(f"Releaseforge proof ID: {payload['releaseforge']['proof_id']}")
+    print(
+        "Status: " + ("ALIGNED CAPTURED RELATIONSHIPS" if handoff.is_aligned else "NEEDS EVIDENCE")
+    )
+    print(f"Handoff findings: {len(payload['findings'])}")
+    print(f"Wrote release handoff packet: {packet.name}")
+    return handoff_exit_code(handoff)
 
 
 def _proof_packet_root(requested: Path) -> Path:

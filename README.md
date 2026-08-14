@@ -24,6 +24,9 @@ automatic platform-compliance tool.
   verified facts, declarations, workflow profile, decision, and findings;
 - optionally writes a separate Markdown, JSON, and offline HTML comparison
   packet for a reviewer, while default comparison remains read-only;
+- can reconcile one validated Releaseforge proof packet with a selected
+  Mastergate and/or Releaseledger build manifest, then write a separate local
+  companion-handoff packet;
 - creates an optional two-version synthetic demo that exercises the same local
   proof and comparison path without touching a real release folder;
 - never uploads, copies, renames, deletes, or modifies a declared source asset.
@@ -124,6 +127,50 @@ new directory outside both input packet directories containing
 proof of authorship, approval, or a verdict about which revision is correct.
 When `--json` and `--output` are used together, stdout remains valid JSON and
 the write confirmation goes to stderr.
+
+## Companion handoff
+
+If a handoff already has a Releaseforge proof packet and either a passing
+Mastergate build or a Releaseledger build, create one separate review dossier:
+
+```bash
+releaseforge handoff /path/to/release-proof \
+  --mastergate /path/to/mastergate-evidence/manifest.json \
+  --releaseledger /path/to/releaseledger-dossier/manifest.json \
+  --output /path/to/release-handoff
+```
+
+`--mastergate` and `--releaseledger` are individually optional, but at least
+one is required. They accept only the known, portable version-1
+`manifest.json` output produced by the corresponding local build command. The
+handoff does not install, import, or call either tool; it reads the existing
+JSON capture locally.
+
+The output directory must be new and must sit outside the Releaseforge proof
+packet directory and every selected companion-manifest directory. It contains:
+
+- `RELEASE_HANDOFF.md`
+- `RELEASE_HANDOFF.json`
+- `RELEASE_HANDOFF.html`
+
+The handoff checks only limited relationships that are present in the captures:
+
+- a Releaseforge WAV asset and a Mastergate measurement align only when their
+  captured SHA-256 values are identical;
+- shared declared release fields align only when Releaseforge and Releaseledger
+  record the same artist, title, catalogue number, and, when supplied by
+  Releaseledger, date;
+- version-1 Releaseforge proof packets do not include track titles, so the
+  handoff compares numbered-track coverage only and never claims title
+  alignment.
+
+An exit status of `0` means every selected captured relationship aligned. A
+status of `1` means the dossier was written with a `needs_evidence`
+discrepancy. A status of `2` means an input manifest, proof packet, or output
+location was invalid. None of these outcomes establishes current-file
+verification, ownership, approval, rights, external delivery, distributor
+acceptance, or release readiness. The generated packet contains no absolute
+input paths, source filenames, source media, or source TOML paths.
 
 ## Pilot
 

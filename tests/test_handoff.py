@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from releaseforge.cli import main
 from releaseforge.compare import Packet
 from releaseforge.config import load_plan
 from releaseforge.evaluate import evaluate_release
@@ -19,7 +20,7 @@ from releaseforge.handoff import (
     write_handoff_packet,
 )
 from releaseforge.inspect import inspect_release
-from releaseforge.report import make_report, report_payload
+from releaseforge.report import make_report, report_payload, write_packet
 
 
 def test_load_mastergate_manifest_keeps_only_safe_captured_fields(tmp_path: Path):
@@ -135,6 +136,48 @@ def test_write_handoff_packet_refuses_output_inside_an_input_tree(
         write_handoff_packet(handoff, protected_root / "handoff", protected_roots=(protected_root,))
 
 
+def test_handoff_cli_writes_an_aligned_packet(
+    synthetic_release: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+):
+    proof = _proof_packet(synthetic_release)
+    proof_dir = _write_proof_packet(synthetic_release, tmp_path / "proof")
+    mastergate_path = _write_mastergate_manifest(
+        tmp_path / "mastergate-input" / "manifest.json", sha256=_proof_track_sha(proof)
+    )
+    output_dir = tmp_path / "handoff"
+
+    result = main(
+        [
+            "handoff",
+            str(proof_dir),
+            "--mastergate",
+            str(mastergate_path),
+            "--output",
+            str(output_dir),
+        ]
+    )
+
+    assert result == 0
+    assert (output_dir / "RELEASE_HANDOFF.json").is_file()
+    assert "Wrote release handoff packet" in capsys.readouterr().out
+
+
+def test_handoff_cli_requires_a_companion_manifest(
+    synthetic_release: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+):
+    proof_dir = _write_proof_packet(synthetic_release, tmp_path / "proof")
+
+    assert main(["handoff", str(proof_dir), "--output", str(tmp_path / "handoff")]) == 2
+    assert "at least one companion" in capsys.readouterr().err
+
+
+def _write_proof_packet(release_dir: Path, output_dir: Path) -> Path:
+    plan = load_plan(release_dir)
+    inspection = inspect_release(plan)
+    report = make_report(plan, inspection, evaluate_release(plan, inspection))
+    return write_packet(report, output_dir)
+
+
 def _write_mastergate_manifest(path: Path, *, sha256: str = "a" * 64) -> Path:
     return _write_json(
         path,
@@ -199,6 +242,7 @@ def _write_releaseledger_manifest(
 
 
 def _write_json(path: Path, payload: dict[str, object]) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, sort_keys=True), encoding="utf-8")
     return path
 
