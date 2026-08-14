@@ -30,4 +30,4 @@ external services are added.
   accidental delivery claims, and valid Markdown front matter.
 - [x] Run the established code/package checks to ensure documentation changes
   do not disturb the product.
-- [ ] Commit, push, and update the existing draft PR description.
+- [x] Commit, push, and update the existing draft PR description.
