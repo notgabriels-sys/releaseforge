@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from releaseforge.compare import Packet
+from releaseforge.coverforge import CoverforgeManifest
 
 
 class HandoffError(ValueError):
@@ -95,14 +96,27 @@ class ReleaseledgerAlignment:
 
 
 @dataclass(frozen=True)
+class CoverforgeLinkage:
+    """The captured visual-source relationship with a Coverforge manifest."""
+
+    state: str
+    matching_source_fields: tuple[str, ...]
+    mismatched_source_fields: tuple[str, ...]
+    skipped_target_keys: tuple[str, ...]
+    over_size_cap_target_keys: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class Handoff:
     """One local comparison of validated Releaseforge and companion captures."""
 
     proof: Packet
     mastergate: MastergateManifest | None
     releaseledger: ReleaseledgerManifest | None
+    coverforge: CoverforgeManifest | None
     mastergate_linkage: MastergateLinkage | None
     releaseledger_alignment: ReleaseledgerAlignment | None
+    coverforge_linkage: CoverforgeLinkage | None
     findings: tuple[HandoffFinding, ...]
 
     @property
@@ -163,11 +177,11 @@ _MARKDOWN_ESCAPES = str.maketrans(
 )
 _HANDOFF_BOUNDARY = (
     "This handoff records relationships between a validated Releaseforge proof packet "
-    "and selected local companion manifests. Schema recognition and a SHA-256 identify "
-    "only the local manifest bytes supplied to this run; they do not authenticate the "
-    "producer or prove an upstream build occurred. It does not establish current-file "
-    "verification, approval, ownership, rights, external delivery, distributor acceptance, "
-    "or release readiness."
+    "and selected local Mastergate-, Releaseledger-, or Coverforge-compatible manifest "
+    "captures. Schema recognition and a SHA-256 identify only the local manifest bytes "
+    "supplied to this run; they do not authenticate the producer or prove an upstream build "
+    "occurred. It does not establish current-file verification, approval, ownership, rights, "
+    "external delivery, distributor acceptance, or release readiness."
 )
 
 
@@ -229,20 +243,24 @@ def build_handoff(
     *,
     mastergate: MastergateManifest | None = None,
     releaseledger: ReleaseledgerManifest | None = None,
+    coverforge: CoverforgeManifest | None = None,
 ) -> Handoff:
     """Reconcile selected captured evidence without reading source media or paths."""
-    if mastergate is None and releaseledger is None:
+    if mastergate is None and releaseledger is None and coverforge is None:
         raise HandoffError("handoff requires at least one companion manifest")
 
     mastergate_linkage, mastergate_findings = _reconcile_mastergate(proof, mastergate)
     releaseledger_alignment, releaseledger_findings = _reconcile_releaseledger(proof, releaseledger)
+    coverforge_linkage, coverforge_findings = _reconcile_coverforge(proof, coverforge)
     return Handoff(
         proof=proof,
         mastergate=mastergate,
         releaseledger=releaseledger,
+        coverforge=coverforge,
         mastergate_linkage=mastergate_linkage,
         releaseledger_alignment=releaseledger_alignment,
-        findings=tuple(mastergate_findings + releaseledger_findings),
+        coverforge_linkage=coverforge_linkage,
+        findings=tuple(mastergate_findings + releaseledger_findings + coverforge_findings),
     )
 
 
@@ -267,6 +285,7 @@ def handoff_payload(handoff: Handoff) -> dict[str, Any]:
         },
         "mastergate": _mastergate_payload(handoff),
         "releaseledger": _releaseledger_payload(handoff),
+        "coverforge": _coverforge_payload(handoff),
         "findings": [
             {
                 "code": finding.code,
@@ -497,6 +516,26 @@ def _releaseledger_payload(handoff: Handoff) -> dict[str, Any] | None:
     }
 
 
+def _coverforge_payload(handoff: Handoff) -> dict[str, Any] | None:
+    if handoff.coverforge is None:
+        return None
+    assert handoff.coverforge_linkage is not None
+    linkage = handoff.coverforge_linkage
+    return {
+        "manifest_sha256": handoff.coverforge.manifest_sha256,
+        "capture_id": handoff.coverforge.capture_id,
+        "captured_output_count": len(handoff.coverforge.outputs),
+        "captured_preflight_finding_count": handoff.coverforge.preflight_finding_count,
+        "linkage": {
+            "state": linkage.state,
+            "matching_source_fields": list(linkage.matching_source_fields),
+            "mismatched_source_fields": list(linkage.mismatched_source_fields),
+            "skipped_target_keys": list(linkage.skipped_target_keys),
+            "over_size_cap_target_keys": list(linkage.over_size_cap_target_keys),
+        },
+    }
+
+
 def _proof_decision(proof: Packet) -> dict[str, Any]:
     decision = proof.payload.get("decision")
     if not isinstance(decision, dict):
@@ -534,6 +573,33 @@ def _markdown_companion_lines(payload: dict[str, Any]) -> list[str]:
                 f"- Matching track numbers: {_markdown_value(alignment['matching_track_numbers'])}",
             ]
         )
+    coverforge = payload["coverforge"]
+    if coverforge is not None:
+        linkage = coverforge["linkage"]
+        lines.extend(
+            [
+                "### Coverforge-compatible v1 manifest capture",
+                "",
+                f"- Manifest SHA-256: `{coverforge['manifest_sha256']}`",
+                f"- Capture ID: `{coverforge['capture_id']}`",
+                f"- Captured outputs: {coverforge['captured_output_count']}",
+                (
+                    "- Captured preflight findings: "
+                    f"{coverforge['captured_preflight_finding_count']}"
+                ),
+                f"- Captured source linkage: {_markdown_value(linkage['state'])}",
+                (f"- Matching source fields: {_markdown_value(linkage['matching_source_fields'])}"),
+                (
+                    "- Mismatched source fields: "
+                    f"{_markdown_value(linkage['mismatched_source_fields'])}"
+                ),
+                f"- Skipped targets: {_markdown_value(linkage['skipped_target_keys'])}",
+                (
+                    "- Over-size-cap targets: "
+                    f"{_markdown_value(linkage['over_size_cap_target_keys'])}"
+                ),
+            ]
+        )
     return lines or ["No companion capture was supplied."]
 
 
@@ -559,6 +625,19 @@ def _html_companion_rows(payload: dict[str, Any]) -> list[str]:
                 "matching declared fields: " + (", ".join(alignment["matching_fields"]) or "none"),
             )
         )
+    coverforge = payload["coverforge"]
+    if coverforge is not None:
+        linkage = coverforge["linkage"]
+        rows.append(
+            _html_row(
+                "Coverforge-compatible v1 manifest capture",
+                coverforge["manifest_sha256"],
+                (
+                    f"{linkage['state']}; matching source fields: "
+                    f"{', '.join(linkage['matching_source_fields']) or 'none'}"
+                ),
+            )
+        )
     return rows or ['<tr><td colspan="3">No companion capture was supplied.</td></tr>']
 
 
@@ -578,6 +657,89 @@ def _reject_protected_output(output_path: Path, protected_roots: tuple[Path | st
         except ValueError:
             continue
         raise HandoffError("handoff output directory must be outside input packet directories")
+
+
+def _reconcile_coverforge(
+    proof: Packet, coverforge: CoverforgeManifest | None
+) -> tuple[CoverforgeLinkage | None, list[HandoffFinding]]:
+    if coverforge is None:
+        return None, []
+    cover = _proof_cover(proof)
+    source = coverforge.source
+    compared_fields = (
+        ("sha256", source.sha256, cover["sha256"]),
+        ("byte_size", source.byte_size, cover["byte_size"]),
+        ("dimensions", (source.width, source.height), (cover["width"], cover["height"])),
+        ("mode", source.mode, cover["image_mode"]),
+    )
+    matching_fields: list[str] = []
+    mismatched_fields: list[str] = []
+    findings: list[HandoffFinding] = []
+    finding_codes = {
+        "sha256": "coverforge_source_sha256_mismatch",
+        "byte_size": "coverforge_source_byte_size_mismatch",
+        "dimensions": "coverforge_source_dimensions_mismatch",
+        "mode": "coverforge_source_mode_mismatch",
+    }
+    for field, coverforge_value, proof_value in compared_fields:
+        if coverforge_value == proof_value:
+            matching_fields.append(field)
+            continue
+        mismatched_fields.append(field)
+        findings.append(
+            HandoffFinding(
+                code=finding_codes[field],
+                severity="needs_evidence",
+                evidence_category="captured_companion_manifest",
+                subject="cover",
+                message=(
+                    "The Coverforge manifest source "
+                    f"{field.replace('_', ' ')} does not match the captured Releaseforge cover. "
+                    "Review the intended handoff relationship."
+                ),
+            )
+        )
+
+    skipped_target_keys = coverforge.skipped_target_keys
+    for target_key in skipped_target_keys:
+        findings.append(
+            HandoffFinding(
+                code="coverforge_target_skipped",
+                severity="needs_evidence",
+                evidence_category="captured_companion_manifest",
+                subject=f"coverforge-target:{target_key}",
+                message=(
+                    "The Coverforge capture records this selected target as not produced. "
+                    "Review the intended visual handoff."
+                ),
+            )
+        )
+    over_size_cap_target_keys = tuple(
+        output.target_key for output in coverforge.outputs if output.over_size_cap
+    )
+    for target_key in over_size_cap_target_keys:
+        findings.append(
+            HandoffFinding(
+                code="coverforge_output_over_size_cap",
+                severity="needs_evidence",
+                evidence_category="captured_companion_manifest",
+                subject=f"coverforge-target:{target_key}",
+                message=(
+                    "The Coverforge capture records this visual output as over its configured "
+                    "size cap. Review the intended visual handoff."
+                ),
+            )
+        )
+    return (
+        CoverforgeLinkage(
+            state="aligned" if not findings else "needs_evidence",
+            matching_source_fields=tuple(matching_fields),
+            mismatched_source_fields=tuple(mismatched_fields),
+            skipped_target_keys=skipped_target_keys,
+            over_size_cap_target_keys=over_size_cap_target_keys,
+        ),
+        findings,
+    )
 
 
 def _reconcile_mastergate(
@@ -743,6 +905,27 @@ def _append_field_alignment(
             ),
         )
     )
+
+
+def _proof_cover(proof: Packet) -> dict[str, Any]:
+    assets = proof.payload.get("assets")
+    if not isinstance(assets, list):
+        raise HandoffError("Releaseforge proof packet has no valid assets")
+    covers = [asset for asset in assets if isinstance(asset, dict) and asset.get("role") == "cover"]
+    if len(covers) != 1:
+        raise HandoffError("Releaseforge proof packet must contain exactly one valid cover asset")
+    cover = covers[0]
+    return {
+        "sha256": _sha256(cover.get("sha256"), "Releaseforge proof packet cover SHA-256"),
+        "byte_size": _positive_int(
+            cover.get("byte_size"), "Releaseforge proof packet cover byte size"
+        ),
+        "width": _positive_int(cover.get("width"), "Releaseforge proof packet cover width"),
+        "height": _positive_int(cover.get("height"), "Releaseforge proof packet cover height"),
+        "image_mode": _nonblank_string(
+            cover.get("image_mode"), "Releaseforge proof packet cover image mode"
+        ),
+    }
 
 
 def _proof_wav_assets(proof: Packet) -> tuple[tuple[str, str], ...]:

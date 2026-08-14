@@ -9,6 +9,7 @@ import pytest
 from releaseforge.cli import main
 from releaseforge.compare import Packet
 from releaseforge.config import load_plan
+from releaseforge.coverforge import load_coverforge_manifest
 from releaseforge.evaluate import evaluate_release
 from releaseforge.handoff import (
     HandoffError,
@@ -67,6 +68,71 @@ def test_build_handoff_records_matching_captured_wav_hashes_and_declarations(
     assert handoff_exit_code(handoff) == 0
 
 
+def test_build_handoff_reconciles_matching_coverforge_source(
+    synthetic_release: Path, tmp_path: Path
+):
+    proof = _proof_packet(synthetic_release)
+    cover = _proof_cover_asset(proof)
+    coverforge = load_coverforge_manifest(
+        _write_coverforge_manifest(
+            tmp_path / "coverforge" / "manifest.json",
+            source_sha256=cover["sha256"],
+            source_bytes=cover["byte_size"],
+            source_dimensions=f"{cover['width']}x{cover['height']}",
+            source_mode=cover["image_mode"],
+        )
+    )
+
+    handoff = build_handoff(proof, coverforge=coverforge)
+    payload = handoff_payload(handoff)
+
+    assert handoff.is_aligned is True
+    assert handoff.coverforge_linkage is not None
+    assert handoff.coverforge_linkage.matching_source_fields == (
+        "sha256",
+        "byte_size",
+        "dimensions",
+        "mode",
+    )
+    assert payload["coverforge"]["capture_id"] == coverforge.capture_id
+    assert payload["coverforge"]["captured_output_count"] == 1
+    assert "slug" not in payload["coverforge"]
+    assert "synthetic-release--bandcamp--3000x3000.jpg" not in json.dumps(payload["coverforge"])
+
+
+def test_build_handoff_records_coverforge_source_and_delivery_discrepancies(
+    synthetic_release: Path, tmp_path: Path
+):
+    proof = _proof_packet(synthetic_release)
+    cover = _proof_cover_asset(proof)
+    coverforge = load_coverforge_manifest(
+        _write_coverforge_manifest(
+            tmp_path / "coverforge" / "manifest.json",
+            source_sha256="f" * 64,
+            source_bytes=cover["byte_size"],
+            source_dimensions=f"{cover['width']}x{cover['height']}",
+            source_mode=cover["image_mode"],
+            skipped_target_keys=("soundcloud",),
+            over_size_cap=True,
+        )
+    )
+
+    handoff = build_handoff(proof, coverforge=coverforge)
+
+    assert handoff.is_aligned is False
+    assert handoff.coverforge_linkage is not None
+    assert handoff.coverforge_linkage.mismatched_source_fields == ("sha256",)
+    assert handoff.coverforge_linkage.skipped_target_keys == ("soundcloud",)
+    assert handoff.coverforge_linkage.over_size_cap_target_keys == ("bandcamp",)
+    assert {finding.code for finding in handoff.findings} == {
+        "coverforge_source_sha256_mismatch",
+        "coverforge_target_skipped",
+        "coverforge_output_over_size_cap",
+    }
+    assert {finding.severity for finding in handoff.findings} == {"needs_evidence"}
+    assert handoff_exit_code(handoff) == 1
+
+
 def test_build_handoff_emits_needs_evidence_for_mismatched_companion_values(
     synthetic_release: Path, tmp_path: Path
 ):
@@ -119,6 +185,37 @@ def test_write_handoff_packet_omits_input_paths_and_escapes_html(
     assert "<script>alert(1)</script>" not in html
     assert payload["handoff_id"].startswith("rfh_")
     assert payload["handoff_id"] == handoff_payload(handoff)["handoff_id"]
+
+
+def test_write_handoff_packet_renders_path_free_coverforge_capture(
+    synthetic_release: Path, tmp_path: Path
+):
+    proof = _proof_packet(synthetic_release)
+    cover = _proof_cover_asset(proof)
+    coverforge = load_coverforge_manifest(
+        _write_coverforge_manifest(
+            tmp_path / "coverforge-input" / "manifest.json",
+            source_sha256=cover["sha256"],
+            source_bytes=cover["byte_size"],
+            source_dimensions=f"{cover['width']}x{cover['height']}",
+            source_mode=cover["image_mode"],
+        )
+    )
+    handoff = build_handoff(proof, coverforge=coverforge)
+    destination = tmp_path / "handoff-output"
+
+    write_handoff_packet(handoff, destination, protected_roots=(tmp_path / "proof",))
+
+    rendered = [
+        (destination / "RELEASE_HANDOFF.json").read_text(encoding="utf-8"),
+        (destination / "RELEASE_HANDOFF.md").read_text(encoding="utf-8"),
+        (destination / "RELEASE_HANDOFF.html").read_text(encoding="utf-8"),
+    ]
+    for document in rendered:
+        assert str(tmp_path) not in document
+        assert "synthetic-release--bandcamp--3000x3000.jpg" not in document
+    assert "Coverforge-compatible v1 manifest capture" in rendered[1]
+    assert "Coverforge-compatible v1 manifest capture" in rendered[2]
 
 
 def test_write_handoff_packet_refuses_output_inside_an_input_tree(
@@ -302,6 +399,52 @@ def _write_releaseledger_manifest(
     return _write_json(path, payload)
 
 
+def _write_coverforge_manifest(
+    path: Path,
+    *,
+    source_sha256: str = "a" * 64,
+    source_bytes: int = 1234,
+    source_dimensions: str = "3000x3000",
+    source_mode: str = "RGB",
+    skipped_target_keys: tuple[str, ...] = (),
+    over_size_cap: bool = False,
+) -> Path:
+    payload: dict[str, object] = {
+        "schema_version": 1,
+        "generated_by": "coverforge",
+        "boundary": "Synthetic local boundary.",
+        "slug": "synthetic-release",
+        "source": {
+            "sha256": source_sha256,
+            "bytes": source_bytes,
+            "dimensions": source_dimensions,
+            "mode": source_mode,
+            "format": "jpeg",
+        },
+        "outputs": [
+            {
+                "target": "bandcamp",
+                "name": "Bandcamp",
+                "file": "synthetic-release--bandcamp--3000x3000.jpg",
+                "dimensions": "3000x3000",
+                "format": "jpeg",
+                "quality": 92,
+                "bytes": 1111,
+                "size": "1 KB",
+                "over_size_cap": over_size_cap,
+                "sha256": "b" * 64,
+            }
+        ],
+        "skipped": [
+            {"target": target_key, "reason": "Synthetic target was not produced."}
+            for target_key in skipped_target_keys
+        ],
+        "findings": [],
+    }
+    payload["capture_id"] = _coverforge_capture_id(payload)
+    return _write_json(path, payload)
+
+
 def _write_json(path: Path, payload: dict[str, object]) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, sort_keys=True), encoding="utf-8")
@@ -322,3 +465,15 @@ def _proof_packet(release_dir: Path) -> Packet:
 
 def _proof_track_sha(proof: Packet) -> str:
     return next(asset["sha256"] for asset in proof.payload["assets"] if asset["role"] == "track:1")
+
+
+def _proof_cover_asset(proof: Packet) -> dict:
+    return next(asset for asset in proof.payload["assets"] if asset["role"] == "cover")
+
+
+def _coverforge_capture_id(payload: dict[str, object]) -> str:
+    canonical = {key: value for key, value in payload.items() if key != "capture_id"}
+    encoded = json.dumps(
+        canonical, ensure_ascii=False, separators=(",", ":"), sort_keys=True
+    ).encode("utf-8")
+    return f"cfp_{hashlib.sha256(encoded).hexdigest()[:20]}"
