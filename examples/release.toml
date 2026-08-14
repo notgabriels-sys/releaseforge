@@ -1,0 +1,27 @@
+# This file is a workflow declaration, not a promise of distributor compliance.
+# Verify the chosen requirements against the destination that will receive this release.
+
+[release]
+title = "Release Title"
+artist = "Primary Artist"
+catalogue_number = "LABEL-001"
+planned_release_date = "2026-09-01"
+
+[requirements]
+minimum_cover_pixels = 3000
+require_square_cover = true
+allowed_audio_extensions = [".wav", ".flac", ".aiff"]
+
+[assets]
+cover = "artwork/final-cover.jpg"
+
+[declarations]
+rights_review = "declared_pending"
+metadata_review = "declared_pending"
+artwork_approval = "declared_pending"
+
+[[tracks]]
+number = 1
+title = "Track Title"
+file = "audio/01-track-title.wav"
+declared_master_status = "declared_pending"
