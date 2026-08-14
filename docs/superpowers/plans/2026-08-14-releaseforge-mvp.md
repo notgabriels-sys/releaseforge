@@ -36,7 +36,7 @@
 - Consumes: a release directory and its `release.toml` file.
 - Produces: `ReleasePlan`, `TrackPlan`, `RequirementPlan`, and `ConfigError` from `releaseforge.config`.
 
-- [ ] **Step 1: Write failing parser tests**
+- [x] **Step 1: Write failing parser tests**
 
 ```python
 def test_load_plan_accepts_complete_relative_release(tmp_path):
@@ -50,13 +50,13 @@ def test_load_plan_rejects_path_escape(tmp_path):
         load_plan(write_plan(tmp_path, cover_path="../cover.jpg"))
 ```
 
-- [ ] **Step 2: Run the parser tests to verify they fail**
+- [x] **Step 2: Run the parser tests to verify they fail**
 
 Run: `python -m pytest tests/test_config.py -v`
 
 Expected: FAIL because `releaseforge.config` is not implemented.
 
-- [ ] **Step 3: Implement immutable plan models and strict TOML validation**
+- [x] **Step 3: Implement immutable plan models and strict TOML validation**
 
 ```python
 @dataclass(frozen=True)
@@ -76,13 +76,13 @@ def load_plan(release_dir: Path) -> ReleasePlan:
 Validate required sections, nonblank strings, ISO dates, extension values,
 declared status enums, paths, duplicate paths, and contiguous track numbers.
 
-- [ ] **Step 4: Run parser tests and the full suite**
+- [x] **Step 4: Run parser tests and the full suite**
 
 Run: `python -m pytest tests/test_config.py -v && python -m pytest -q`
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit the parser foundation**
+- [x] **Step 5: Commit the parser foundation**
 
 ```bash
 git add .gitignore pyproject.toml src/releaseforge tests examples/release.toml
@@ -100,7 +100,7 @@ git commit -m "feat: add strict release plan parser"
 - Consumes: `ReleasePlan` from `releaseforge.config`.
 - Produces: `AssetFact`, `inspect_release(plan)`, and `InspectionError` from `releaseforge.inspect`.
 
-- [ ] **Step 1: Write failing inspection tests**
+- [x] **Step 1: Write failing inspection tests**
 
 ```python
 def test_inspect_release_records_hash_and_image_geometry(synthetic_release):
@@ -115,13 +115,13 @@ def test_inspect_release_records_pcm_wav_duration(synthetic_release):
     assert track.duration_seconds == pytest.approx(1.0)
 ```
 
-- [ ] **Step 2: Run the inspection tests to verify they fail**
+- [x] **Step 2: Run the inspection tests to verify they fail**
 
 Run: `python -m pytest tests/test_inspect.py -v`
 
 Expected: FAIL because `releaseforge.inspect` is not implemented.
 
-- [ ] **Step 3: Implement file facts without writing source files**
+- [x] **Step 3: Implement file facts without writing source files**
 
 ```python
 @dataclass(frozen=True)
@@ -141,13 +141,13 @@ Use Pillow only for the declared cover and `wave` only for `.wav` tracks. Hash
 bytes with SHA-256 and propagate a clear read error for missing/unreadable
 assets. Do not follow a path outside the plan root.
 
-- [ ] **Step 4: Run inspection tests and the full suite**
+- [x] **Step 4: Run inspection tests and the full suite**
 
 Run: `python -m pytest tests/test_inspect.py -v && python -m pytest -q`
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit read-only inspection**
+- [x] **Step 5: Commit read-only inspection**
 
 ```bash
 git add src/releaseforge/inspect.py tests/test_inspect.py tests/helpers.py
@@ -164,7 +164,7 @@ git commit -m "feat: inspect local release assets"
 - Consumes: `ReleasePlan` and inspection output.
 - Produces: `Finding`, `Evaluation`, and `evaluate_release(plan, facts)` from `releaseforge.evaluate`.
 
-- [ ] **Step 1: Write failing evaluation tests**
+- [x] **Step 1: Write failing evaluation tests**
 
 ```python
 def test_evaluation_passes_when_facts_match_declared_profile(synthetic_release):
@@ -181,13 +181,13 @@ def test_evaluation_blocks_undersized_cover_and_pending_rights(synthetic_release
     }
 ```
 
-- [ ] **Step 2: Run evaluation tests to verify they fail**
+- [x] **Step 2: Run evaluation tests to verify they fail**
 
 Run: `python -m pytest tests/test_evaluate.py -v`
 
 Expected: FAIL because `releaseforge.evaluate` is not implemented.
 
-- [ ] **Step 3: Implement evaluation and explicit evidence categories**
+- [x] **Step 3: Implement evaluation and explicit evidence categories**
 
 ```python
 @dataclass(frozen=True)
@@ -207,13 +207,13 @@ Evaluate cover geometry, allowed audio extensions, track facts, and required
 declaration status without importing any platform policy. Generate stable
 finding codes and source-independent messages.
 
-- [ ] **Step 4: Run evaluation tests and the full suite**
+- [x] **Step 4: Run evaluation tests and the full suite**
 
 Run: `python -m pytest tests/test_evaluate.py -v && python -m pytest -q`
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit the evaluator**
+- [x] **Step 5: Commit the evaluator**
 
 ```bash
 git add src/releaseforge/evaluate.py tests/test_evaluate.py
@@ -230,7 +230,7 @@ git commit -m "feat: evaluate release evidence and workflow gates"
 - Consumes: `ReleasePlan`, inspection data, and `Evaluation`.
 - Produces: `report_payload`, `render_markdown`, `render_html`, and `write_packet` from `releaseforge.report`.
 
-- [ ] **Step 1: Write failing report tests**
+- [x] **Step 1: Write failing report tests**
 
 ```python
 def test_write_packet_creates_three_portable_outputs(synthetic_release, tmp_path):
@@ -246,13 +246,13 @@ def test_html_escapes_declared_text(synthetic_release, tmp_path):
     assert "&lt;unsafe&gt;" in html
 ```
 
-- [ ] **Step 2: Run report tests to verify they fail**
+- [x] **Step 2: Run report tests to verify they fail**
 
 Run: `python -m pytest tests/test_report.py -v`
 
 Expected: FAIL because `releaseforge.report` is not implemented.
 
-- [ ] **Step 3: Implement deterministic Markdown, JSON, and offline HTML**
+- [x] **Step 3: Implement deterministic Markdown, JSON, and offline HTML**
 
 ```python
 def write_packet(report: Report, output_dir: Path) -> Path:
@@ -263,13 +263,13 @@ Use `json.dumps(..., sort_keys=True, indent=2)`, `html.escape`, inline CSS,
 and no external URLs. Show the decision state first, followed by blockers,
 boundaries, declared release metadata, verified asset facts, and findings.
 
-- [ ] **Step 4: Run report tests and the full suite**
+- [x] **Step 4: Run report tests and the full suite**
 
 Run: `python -m pytest tests/test_report.py -v && python -m pytest -q`
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit the proof packet**
+- [x] **Step 5: Commit the proof packet**
 
 ```bash
 git add src/releaseforge/report.py tests/test_report.py
@@ -290,7 +290,7 @@ git commit -m "feat: generate portable release proof packets"
 - Consumes: parser, inspection, evaluation, and report interfaces from Tasks 1–4.
 - Produces: `releaseforge init`, `releaseforge check`, and `releaseforge build` commands.
 
-- [ ] **Step 1: Write failing CLI tests**
+- [x] **Step 1: Write failing CLI tests**
 
 ```python
 def test_check_is_read_only_and_reports_a_decision(synthetic_release, capsys):
@@ -307,13 +307,13 @@ def test_build_refuses_an_existing_output(synthetic_release, tmp_path, capsys):
     assert "already exists" in capsys.readouterr().err
 ```
 
-- [ ] **Step 2: Run CLI tests to verify they fail**
+- [x] **Step 2: Run CLI tests to verify they fail**
 
 Run: `python -m pytest tests/test_cli.py -v`
 
 Expected: FAIL because `releaseforge.cli` is not implemented.
 
-- [ ] **Step 3: Implement commands and package entry point**
+- [x] **Step 3: Implement commands and package entry point**
 
 ```python
 def main(argv: Sequence[str] | None = None) -> int:
@@ -324,13 +324,13 @@ def main(argv: Sequence[str] | None = None) -> int:
 requires a nonexistent output directory. Document the exact boundaries and a
 copy-paste quick start in the README. Use the MIT license for the open core.
 
-- [ ] **Step 4: Run all unit tests and static checks**
+- [x] **Step 4: Run all unit tests and static checks**
 
 Run: `python -m pytest -q && python -m ruff check src tests && python -m ruff format --check src tests`
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit the public command workflow**
+- [x] **Step 5: Commit the public command workflow**
 
 ```bash
 git add README.md LICENSE pyproject.toml src/releaseforge/cli.py src/releaseforge/__init__.py tests/test_cli.py
@@ -348,33 +348,31 @@ git commit -m "feat: add releaseforge command workflow"
 - Consumes: the published package wheel and CLI.
 - Produces: reproducible validation evidence for the draft PR.
 
-- [ ] **Step 1: Write failing boundary tests**
+- [x] **Step 1: Write boundary tests**
 
 ```python
-def test_generated_reports_state_the_evidence_boundary(synthetic_release, tmp_path):
-    packet = build_packet(synthetic_release, tmp_path)
-    assert "does not establish" in (packet / "RELEASE_PROOF.md").read_text()
+def test_build_rejects_an_output_inside_the_release_source(synthetic_release, capsys):
+    assert main(["build", str(synthetic_release), "--output", str(synthetic_release / "proof")]) == 2
 
 
-def test_source_tree_is_unchanged_after_build(synthetic_release, tmp_path):
-    before = tree_digest(synthetic_release)
-    build_packet(synthetic_release, tmp_path)
-    assert tree_digest(synthetic_release) == before
+def test_inspection_rejects_a_path_that_escapes_via_symlink(tmp_path):
+    with pytest.raises(InspectionError, match="must stay inside release directory"):
+        inspect_release(load_plan(release_dir))
 ```
 
-- [ ] **Step 2: Run boundary tests to verify they fail**
+- [x] **Step 2: Run boundary tests to verify behavior**
 
 Run: `python -m pytest tests/test_security_boundaries.py -v`
 
-Expected: FAIL until the final report copy and integration helpers are complete.
+Expected: PASS with output-inside-source and symlink-escape attempts rejected before source files change.
 
-- [ ] **Step 3: Complete packaging and integration coverage**
+- [x] **Step 3: Complete packaging and integration coverage**
 
 Build a wheel, install it into a fresh temporary virtual environment, generate
 a synthetic release proof packet with the installed CLI, and assert the output
 names, boundary text, deterministic JSON, and source immutability.
 
-- [ ] **Step 4: Run the final validation matrix**
+- [x] **Step 4: Run the final validation matrix**
 
 Run:
 
@@ -390,7 +388,7 @@ rg -n -i --glob '!*.egg-info/**' --glob '!build/**' '(api[_-]?key|secret|passwor
 
 Expected: all commands pass and both capability scans produce no matches.
 
-- [ ] **Step 5: Commit final documentation and verification coverage**
+- [x] **Step 5: Commit final documentation and verification coverage**
 
 ```bash
 git add README.md tests/test_cli.py tests/test_security_boundaries.py
