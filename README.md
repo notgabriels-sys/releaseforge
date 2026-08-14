@@ -113,6 +113,14 @@ equivalent captured content, `1` when there are differences, and `2` for an
 invalid packet or a mismatching content ID. It does not read source media,
 choose which packet is correct, or establish approval.
 
+## Pilot
+
+If you use Releaseforge on a genuine local handoff, follow the
+[privacy-minimal pilot protocol](docs/PILOT.md). It asks for broad outcome
+feedback only—never source media, proof packets, hashes, release metadata,
+rights material, URLs, or credentials—and it makes no claim that a paid service
+is available.
+
 ## `release.toml`
 
 ```toml
