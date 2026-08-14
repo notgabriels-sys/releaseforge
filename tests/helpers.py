@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import wave
 from pathlib import Path
+
+from PIL import Image
 
 
 def write_plan(
@@ -46,3 +49,28 @@ declared_master_status = "declared_final"
         encoding="utf-8",
     )
     return release_dir
+
+
+def write_synthetic_release(
+    release_dir: Path,
+    *,
+    cover_size: tuple[int, int] = (3000, 3000),
+    cover_mode: str = "RGB",
+    duration_seconds: float = 1.0,
+) -> Path:
+    """Create one valid local release folder for file-inspection tests."""
+    root = write_plan(release_dir)
+    artwork_dir = root / "artwork"
+    audio_dir = root / "audio"
+    artwork_dir.mkdir(exist_ok=True)
+    audio_dir.mkdir(exist_ok=True)
+    Image.new(cover_mode, cover_size, color=(12, 24, 36)).save(artwork_dir / "cover.jpg")
+
+    frame_rate = 44_100
+    frame_count = round(frame_rate * duration_seconds)
+    with wave.open(str(audio_dir / "01-track.wav"), "wb") as output:
+        output.setnchannels(1)
+        output.setsampwidth(2)
+        output.setframerate(frame_rate)
+        output.writeframes(b"\x00\x00" * frame_count)
+    return root
