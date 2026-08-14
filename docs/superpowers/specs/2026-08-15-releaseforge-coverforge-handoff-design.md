@@ -56,8 +56,11 @@ The feature does not:
 
 ## Input contract
 
-`load_coverforge_manifest(path)` will be a strict local parser in
-`releaseforge.handoff`.
+`load_coverforge_manifest(path)` will live in a new focused
+`releaseforge.coverforge` adapter module. `releaseforge.handoff` will import
+only its immutable safe model and own the Releaseforge-proof reconciliation.
+This prevents the already large handoff renderer/parser module from absorbing
+another tool's schema boundary.
 
 It reads UTF-8 JSON and its raw SHA-256 once. The root must contain exactly:
 
@@ -180,9 +183,9 @@ input tree. Exit statuses remain:
 The test suite will add coverage for:
 
 1. a valid Coverforge v1 manifest retaining only safe facts and its raw
-   manifest SHA-256;
+   manifest SHA-256 in `tests/test_coverforge.py`;
 2. rejection of an unknown root field, a path-bearing output filename, and a
-   capture-ID mismatch;
+   capture-ID mismatch in `tests/test_coverforge.py`;
 3. an aligned proof/manifest source relationship with a deterministic
    path-free handoff payload;
 4. source mismatch, skipped-target, and over-cap-output findings and exit
