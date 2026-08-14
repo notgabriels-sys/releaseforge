@@ -69,7 +69,7 @@ The new `releaseforge.handoff` module owns strict parsing, reconciliation,
 rendering, and writes. It will have focused immutable models for the two
 external schemas rather than importing either package as a runtime dependency.
 
-The parser accepts only documented version-1 build manifests:
+The parser accepts only documented version-1 schema-compatible manifest captures:
 
 - Mastergate must have the exact expected contract, measurement, and result
   structure; `declared_file_checks_passed` must be `true` and its known
@@ -79,6 +79,10 @@ The parser accepts only documented version-1 build manifests:
 - Unknown fields, malformed types, unsupported schema versions, unsafe
   filenames, or direct/relative path fields outside the known portable shapes
   cause a normal `HandoffError`, not partial output.
+
+Schema recognition and a SHA-256 identify only the local manifest bytes
+supplied to the command. They do not authenticate the producing program or
+prove an upstream build ran.
 
 The dossier evaluates two independent links:
 

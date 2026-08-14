@@ -17,10 +17,12 @@ from releaseforge.handoff import (
     handoff_payload,
     load_mastergate_manifest,
     load_releaseledger_manifest,
+    render_handoff_html,
+    render_handoff_markdown,
     write_handoff_packet,
 )
 from releaseforge.inspect import inspect_release
-from releaseforge.report import make_report, report_payload, write_packet
+from releaseforge.report import make_report, packet_proof_id, report_payload, write_packet
 
 
 def test_load_mastergate_manifest_keeps_only_safe_captured_fields(tmp_path: Path):
@@ -169,6 +171,65 @@ def test_handoff_cli_requires_a_companion_manifest(
 
     assert main(["handoff", str(proof_dir), "--output", str(tmp_path / "handoff")]) == 2
     assert "at least one companion" in capsys.readouterr().err
+
+
+def test_handoff_cli_escapes_active_markdown_from_a_valid_proof_packet(
+    synthetic_release: Path, tmp_path: Path
+):
+    proof_dir = _write_proof_packet(synthetic_release, tmp_path / "proof")
+    proof_path = proof_dir / "RELEASE_PROOF.json"
+    proof_payload = json.loads(proof_path.read_text(encoding="utf-8"))
+    hostile_title = "![tracking](https://example.invalid/pixel.png) `literal`"
+    proof_payload["release"]["title"] = hostile_title
+    proof_payload["proof_id"] = packet_proof_id(proof_payload)
+    proof_path.write_text(
+        json.dumps(proof_payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
+    mastergate_path = _write_mastergate_manifest(
+        tmp_path / "mastergate" / "manifest.json",
+        sha256=next(
+            asset["sha256"] for asset in proof_payload["assets"] if asset["role"] == "track:1"
+        ),
+    )
+    output_dir = tmp_path / "handoff"
+
+    assert (
+        main(
+            [
+                "handoff",
+                str(proof_dir),
+                "--mastergate",
+                str(mastergate_path),
+                "--output",
+                str(output_dir),
+            ]
+        )
+        == 0
+    )
+
+    markdown = (output_dir / "RELEASE_HANDOFF.md").read_text(encoding="utf-8")
+    assert hostile_title not in markdown
+    assert r"\!\[tracking\]\(https://example.invalid/pixel.png\) \`literal\`" in markdown
+
+
+def test_handoff_packet_states_compatible_manifest_provenance_boundary(
+    synthetic_release: Path, tmp_path: Path
+):
+    proof = _proof_packet(synthetic_release)
+    handoff = build_handoff(
+        proof,
+        mastergate=load_mastergate_manifest(
+            _write_mastergate_manifest(tmp_path / "mastergate.json", sha256=_proof_track_sha(proof))
+        ),
+    )
+
+    payload = handoff_payload(handoff)
+    markdown = render_handoff_markdown(handoff)
+    html = render_handoff_html(handoff)
+
+    for rendered in (payload["boundary"], markdown, html):
+        assert "do not authenticate the producer" in rendered
+    assert "Mastergate-compatible v1 manifest capture" in html
 
 
 def _write_proof_packet(release_dir: Path, output_dir: Path) -> Path:

@@ -24,9 +24,9 @@ automatic platform-compliance tool.
   verified facts, declarations, workflow profile, decision, and findings;
 - optionally writes a separate Markdown, JSON, and offline HTML comparison
   packet for a reviewer, while default comparison remains read-only;
-- can reconcile one validated Releaseforge proof packet with a selected
-  Mastergate and/or Releaseledger build manifest, then write a separate local
-  companion-handoff packet;
+- can reconcile one validated Releaseforge proof packet with selected
+  Mastergate- and/or Releaseledger-compatible version-1 manifest captures,
+  then write a separate local companion-handoff packet;
 - creates an optional two-version synthetic demo that exercises the same local
   proof and comparison path without touching a real release folder;
 - never uploads, copies, renames, deletes, or modifies a declared source asset.
@@ -131,7 +131,8 @@ the write confirmation goes to stderr.
 ## Companion handoff
 
 If a handoff already has a Releaseforge proof packet and either a passing
-Mastergate build or a Releaseledger build, create one separate review dossier:
+Mastergate-compatible capture or a Releaseledger-compatible capture, create
+one separate review dossier:
 
 ```bash
 releaseforge handoff /path/to/release-proof \
@@ -142,9 +143,11 @@ releaseforge handoff /path/to/release-proof \
 
 `--mastergate` and `--releaseledger` are individually optional, but at least
 one is required. They accept only the known, portable version-1
-`manifest.json` output produced by the corresponding local build command. The
-handoff does not install, import, or call either tool; it reads the existing
-JSON capture locally.
+`manifest.json` schema shapes used by the companion tools. Releaseforge hashes
+the supplied manifest bytes and validates that shape; this identifies only the
+local bytes selected for the handoff, not the source program or whether an
+upstream build ran. The handoff does not install, import, or call either tool;
+it reads the existing JSON capture locally.
 
 The output directory must be new and must sit outside the Releaseforge proof
 packet directory and every selected companion-manifest directory. It contains:
@@ -170,7 +173,9 @@ discrepancy. A status of `2` means an input manifest, proof packet, or output
 location was invalid. None of these outcomes establishes current-file
 verification, ownership, approval, rights, external delivery, distributor
 acceptance, or release readiness. The generated packet contains no absolute
-input paths, source filenames, source media, or source TOML paths.
+input paths, source filenames, source media, or source TOML paths. Its
+companion-manifest SHA-256 values are capture identifiers, not signatures or
+producer authentication.
 
 ## Pilot
 

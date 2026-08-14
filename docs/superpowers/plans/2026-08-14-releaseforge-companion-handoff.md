@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build a local-only Releaseforge `handoff` command that reconciles a validated Releaseforge proof packet with selected Mastergate and/or Releaseledger build manifests and writes a portable, evidence-bounded dossier.
+**Goal:** Build a local-only Releaseforge `handoff` command that reconciles a validated Releaseforge proof packet with selected Mastergate- and/or Releaseledger-compatible manifest captures and writes a portable, evidence-bounded dossier.
 
 **Architecture:** Add one focused `releaseforge.handoff` module with immutable companion models, strict version-1 parsers, reconciliation, deterministic payload construction, escaped renderers, and a new-directory-only writer. Extend the existing argparse CLI with a required-output `handoff` subcommand. The module imports Releaseforge's existing packet validator but never imports Mastergate or Releaseledger as dependencies.
 
@@ -12,7 +12,7 @@
 
 - No runtime dependency additions, network requests, subprocesses, accounts, uploads, analytics, credentials, payment flow, or source-media reads.
 - The command accepts a validated Releaseforge proof packet plus at least one direct companion `manifest.json` path.
-- Strictly accept only documented Mastergate and Releaseledger version-1 build manifests; reject malformed/unknown schema fields and unsupported versions before output.
+- Strictly accept only documented Mastergate and Releaseledger version-1 schema shapes; reject malformed/unknown schema fields and unsupported versions before output, while never treating schema recognition or a capture hash as producer authentication.
 - Never write inside the Releaseforge proof-packet directory or a companion manifest parent directory; never overwrite an existing output path.
 - Output exactly `RELEASE_HANDOFF.md`, `RELEASE_HANDOFF.json`, and `RELEASE_HANDOFF.html` without absolute input paths, directory names, source filenames, source media, or source TOML paths.
 - A SHA-256 match is a match between captured values only. Never claim current-file verification, approval, ownership, external delivery, platform acceptance, or release readiness.

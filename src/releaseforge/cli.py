@@ -145,9 +145,11 @@ def _parser() -> argparse.ArgumentParser:
         "handoff", help="write a local companion-evidence handoff packet"
     )
     handoff_parser.add_argument("proof_packet", help="proof packet directory or RELEASE_PROOF.json")
-    handoff_parser.add_argument("--mastergate", help="direct Mastergate build manifest.json path")
     handoff_parser.add_argument(
-        "--releaseledger", help="direct Releaseledger build manifest.json path"
+        "--mastergate", help="direct Mastergate-compatible version-1 manifest.json path"
+    )
+    handoff_parser.add_argument(
+        "--releaseledger", help="direct Releaseledger-compatible version-1 manifest.json path"
     )
     handoff_parser.add_argument(
         "--output", "-o", required=True, help="new handoff directory outside every input packet"

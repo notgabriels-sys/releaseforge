@@ -1,4 +1,4 @@
-"""Strict local intake for portable companion build manifests."""
+"""Strict local intake for portable companion manifest captures."""
 
 from __future__ import annotations
 
@@ -36,7 +36,7 @@ class MastergateMeasurement:
 
 @dataclass(frozen=True)
 class MastergateManifest:
-    """The subset of a passing Mastergate build manifest safe for reconciliation."""
+    """Safe facts captured from a schema-compatible Mastergate version-1 manifest."""
 
     manifest_sha256: str
     measurements: tuple[MastergateMeasurement, ...]
@@ -44,7 +44,7 @@ class MastergateManifest:
 
 @dataclass(frozen=True)
 class ReleaseledgerTrack:
-    """A declared track value captured in a Releaseledger build manifest."""
+    """A declared track value captured in a Releaseledger-compatible manifest."""
 
     number: int
     title: str
@@ -52,7 +52,7 @@ class ReleaseledgerTrack:
 
 @dataclass(frozen=True)
 class ReleaseledgerManifest:
-    """The shared declared metadata retained from a Releaseledger build manifest."""
+    """Safe metadata captured from a schema-compatible Releaseledger version-1 manifest."""
 
     manifest_sha256: str
     artist: str
@@ -158,16 +158,21 @@ _RELEASELEDGER_FILES = (
     "manifest.json",
     "tracks.csv",
 )
+_MARKDOWN_ESCAPES = str.maketrans(
+    {character: f"\\{character}" for character in r"\`*_[](){}#!+~-|"}
+)
 _HANDOFF_BOUNDARY = (
     "This handoff records relationships between a validated Releaseforge proof packet "
-    "and selected local companion manifests. It does not establish current-file "
-    "verification, approval, ownership, rights, external delivery, distributor "
-    "acceptance, or release readiness."
+    "and selected local companion manifests. Schema recognition and a SHA-256 identify "
+    "only the local manifest bytes supplied to this run; they do not authenticate the "
+    "producer or prove an upstream build occurred. It does not establish current-file "
+    "verification, approval, ownership, rights, external delivery, distributor acceptance, "
+    "or release readiness."
 )
 
 
 def load_mastergate_manifest(path: Path | str) -> MastergateManifest:
-    """Load a passing version-1 Mastergate build manifest without retaining paths."""
+    """Load a passing schema-compatible Mastergate version-1 manifest without paths."""
     payload, manifest_sha256 = _load_json_object(path, "Mastergate manifest")
     _expect_exact_keys(payload, _MASTERGATE_FIELDS, "Mastergate manifest")
     if payload["schema_version"] != 1:
@@ -191,7 +196,7 @@ def load_mastergate_manifest(path: Path | str) -> MastergateManifest:
 
 
 def load_releaseledger_manifest(path: Path | str) -> ReleaseledgerManifest:
-    """Load a version-1 Releaseledger build manifest without retaining source paths."""
+    """Load a schema-compatible Releaseledger version-1 manifest without source paths."""
     payload, manifest_sha256 = _load_json_object(path, "Releaseledger manifest")
     _expect_exact_keys(payload, _RELEASELEDGER_FIELDS, "Releaseledger manifest")
     if payload["schema_version"] != 1:
@@ -507,7 +512,7 @@ def _markdown_companion_lines(payload: dict[str, Any]) -> list[str]:
         linkage = mastergate["linkage"]
         lines.extend(
             [
-                "### Mastergate capture",
+                "### Mastergate-compatible v1 manifest capture",
                 "",
                 f"- Manifest SHA-256: `{mastergate['manifest_sha256']}`",
                 f"- Captured measurements: {mastergate['captured_measurement_count']}",
@@ -521,7 +526,7 @@ def _markdown_companion_lines(payload: dict[str, Any]) -> list[str]:
         alignment = releaseledger["alignment"]
         lines.extend(
             [
-                "### Releaseledger capture",
+                "### Releaseledger-compatible v1 manifest capture",
                 "",
                 f"- Manifest SHA-256: `{releaseledger['manifest_sha256']}`",
                 f"- Matching declared fields: {_markdown_value(alignment['matching_fields'])}",
@@ -539,7 +544,7 @@ def _html_companion_rows(payload: dict[str, Any]) -> list[str]:
         linkage = mastergate["linkage"]
         rows.append(
             _html_row(
-                "Mastergate build manifest",
+                "Mastergate-compatible v1 manifest capture",
                 mastergate["manifest_sha256"],
                 f"{linkage['state']}; matched WAV roles: {', '.join(linkage['matched_releaseforge_wav_roles']) or 'none'}",
             )
@@ -549,7 +554,7 @@ def _html_companion_rows(payload: dict[str, Any]) -> list[str]:
         alignment = releaseledger["alignment"]
         rows.append(
             _html_row(
-                "Releaseledger build manifest",
+                "Releaseledger-compatible v1 manifest capture",
                 releaseledger["manifest_sha256"],
                 "matching declared fields: " + (", ".join(alignment["matching_fields"]) or "none"),
             )
@@ -562,7 +567,8 @@ def _html_row(*values: object) -> str:
 
 
 def _markdown_value(value: object) -> str:
-    return escape(str(value), quote=False).replace("|", "\\|").replace("\n", " ")
+    text = escape(str(value), quote=False).replace("\r", " ").replace("\n", " ")
+    return text.translate(_MARKDOWN_ESCAPES)
 
 
 def _reject_protected_output(output_path: Path, protected_roots: tuple[Path | str, ...]) -> None:
