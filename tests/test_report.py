@@ -7,12 +7,20 @@ import pytest
 from releaseforge.config import load_plan
 from releaseforge.evaluate import evaluate_release
 from releaseforge.inspect import inspect_release
-from releaseforge.report import ReportError, make_report, render_html, report_payload, write_packet
+from releaseforge.report import (
+    ReportError,
+    make_report,
+    render_html,
+    render_markdown,
+    report_payload,
+    write_packet,
+)
 
 
 def _report(release_dir):
     plan = load_plan(release_dir)
-    return make_report(plan, inspect_release(plan), evaluate_release(plan, inspect_release(plan)))
+    inspection = inspect_release(plan)
+    return make_report(plan, inspection, evaluate_release(plan, inspection))
 
 
 def test_write_packet_creates_three_portable_outputs(synthetic_release, tmp_path):
@@ -71,3 +79,11 @@ def test_payload_has_a_stable_proof_id(synthetic_release):
 
     assert first["proof_id"] == second["proof_id"]
     assert first["proof_id"].startswith("rfp_")
+
+
+def test_human_outputs_expose_the_packet_proof_id(synthetic_release):
+    report = _report(synthetic_release)
+    proof_id = report_payload(report)["proof_id"]
+
+    assert proof_id in render_markdown(report)
+    assert proof_id in render_html(report)

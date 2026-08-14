@@ -54,6 +54,9 @@ path.
    existing output directory.
 5. The recipient opens `RELEASE_READINESS.html` or `RELEASE_PROOF.md` and can
    see the same deterministic findings, asset hashes, and declared boundaries.
+6. After a revision, `releaseforge compare BEFORE_PROOF AFTER_PROOF` validates
+   both packet content IDs and reports which verified asset facts, declarations,
+   workflow rules, decisions, or findings changed. It never reads source media.
 
 ## Input contract
 
@@ -102,6 +105,11 @@ Reports include relative asset paths, SHA-256 hashes, byte sizes, image facts,
 available WAV facts, requirements, and findings. They omit absolute source
 paths. No source file is copied, altered, uploaded, deleted, or renamed.
 
+Every packet includes a deterministic `proof_id` calculated from its report
+content. It helps a reviewer identify a specific captured packet and lets
+`compare` reject packets whose content no longer matches their recorded ID. It
+is not a cryptographic signature, proof of authorship, or an approval signal.
+
 The HTML report is a document rather than a hosted application: no JavaScript
 network requests, no analytics, no embedded credentials, and no external
 assets. Its visual hierarchy prioritizes the release decision, blockers,
@@ -128,8 +136,11 @@ The Python package is split into small pure layers:
 2. `inspect.py` reads permitted local file facts and hashes.
 3. `evaluate.py` applies the user-declared workflow profile and emits findings.
 4. `report.py` serializes one report model as Markdown, JSON, and a static
-   HTML document.
-5. `cli.py` owns `init`, read-only `check`, and non-overwriting `build`.
+   HTML document, including a deterministic proof ID.
+5. `compare.py` validates packet content IDs and derives a categorized,
+   source-path-free difference model without reading source media.
+6. `cli.py` owns `init`, read-only `check`, non-overwriting `build`, and
+   read-only `compare`.
 
 Pillow provides image facts; the Python standard library handles TOML, WAV,
 hashing, paths, JSON, HTML escaping, and reports. The product remains offline
@@ -146,6 +157,9 @@ by design.
   explicit boundary statement in all human-facing outputs.
 - `check` changes no files; `build` creates a new packet and refuses collision;
   reports contain no absolute source paths.
+- `compare` distinguishes verified asset changes from declared review changes,
+  uses stable content IDs, returns the documented exit status, and rejects
+  unsafe absolute asset paths or mismatching IDs.
 - Tests cover parser failures, file inspection, evaluation, every output
   format, CLI exit status, source immutability, fresh wheel installation, and
   a targeted no-network/no-subprocess/no-credential scan.
@@ -156,7 +170,7 @@ Only after testing this core with actual release-folder workflows should the
 project consider:
 
 1. adapters for Coverforge, Mastergate, PressAssetbook, and Releaseledger;
-2. version-to-version proof comparison and client approval capture;
+2. human approval capture that stays distinct from proof capture;
 3. maintained delivery profiles with dated source links and explicit update
    history;
 4. a paid, hosted team layer that preserves the same evidence categories and

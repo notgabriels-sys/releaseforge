@@ -28,7 +28,7 @@
 - Consumes: the existing report model.
 - Produces: `proof_id` in `report_payload(report)` and `packet_proof_id(payload)`.
 
-- [ ] **Step 1: Write failing proof-ID tests**
+- [x] **Step 1: Write failing proof-ID tests**
 
 ```python
 def test_payload_has_a_stable_proof_id(synthetic_release):
@@ -38,13 +38,13 @@ def test_payload_has_a_stable_proof_id(synthetic_release):
     assert first["proof_id"].startswith("rfp_")
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `python -m pytest tests/test_report.py::test_payload_has_a_stable_proof_id -v`
 
 Expected: FAIL because packet payloads have no proof ID.
 
-- [ ] **Step 3: Implement canonical ID generation**
+- [x] **Step 3: Implement canonical ID generation**
 
 ```python
 def packet_proof_id(payload: Mapping[str, Any]) -> str:
@@ -54,7 +54,7 @@ def packet_proof_id(payload: Mapping[str, Any]) -> str:
 Canonicalize with sorted JSON keys and compact separators. Do not include
 filesystem paths, timestamps, or the proof ID itself.
 
-- [ ] **Step 4: Run report tests and commit**
+- [x] **Step 4: Run report tests and commit**
 
 Run: `python -m pytest tests/test_report.py -v`
 
@@ -75,7 +75,7 @@ git commit -m "feat: add deterministic release proof IDs"
 - Consumes: `RELEASE_PROOF.json` packets and `packet_proof_id`.
 - Produces: `Packet`, `Change`, `Comparison`, `load_packet`, and `compare_packets`.
 
-- [ ] **Step 1: Write failing comparison tests**
+- [x] **Step 1: Write failing comparison tests**
 
 ```python
 def test_compare_reports_verified_asset_bytes_changed(before_packet, after_packet):
@@ -88,13 +88,13 @@ def test_compare_rejects_a_packet_with_an_invalid_proof_id(packet_path):
         load_packet(packet_path)
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `python -m pytest tests/test_compare.py -v`
 
 Expected: FAIL because `releaseforge.compare` is not implemented.
 
-- [ ] **Step 3: Implement packet loading, integrity validation, and categories**
+- [x] **Step 3: Implement packet loading, integrity validation, and categories**
 
 ```python
 @dataclass(frozen=True)
@@ -110,7 +110,7 @@ Compare asset roles by SHA-256, local facts, and relative paths; compare
 declared sections and findings by stable values. Sort changes by category,
 subject, and code before returning them.
 
-- [ ] **Step 4: Run comparison tests and commit**
+- [x] **Step 4: Run comparison tests and commit**
 
 Run: `python -m pytest tests/test_compare.py -v && python -m pytest -q`
 
@@ -133,7 +133,7 @@ git commit -m "feat: compare local release proof packets"
 - Consumes: `compare_packets` and comparison renderers.
 - Produces: `releaseforge compare BEFORE AFTER [--json]`.
 
-- [ ] **Step 1: Write failing CLI tests**
+- [x] **Step 1: Write failing CLI tests**
 
 ```python
 def test_compare_returns_one_for_captured_changes(before_packet, after_packet, capsys):
@@ -141,20 +141,20 @@ def test_compare_returns_one_for_captured_changes(before_packet, after_packet, c
     assert "RELEASE PROOF COMPARISON" in capsys.readouterr().out
 ```
 
-- [ ] **Step 2: Run the CLI test to verify it fails**
+- [x] **Step 2: Run the CLI test to verify it fails**
 
 Run: `python -m pytest tests/test_cli.py::test_compare_returns_one_for_captured_changes -v`
 
 Expected: FAIL because the command does not exist.
 
-- [ ] **Step 3: Implement safe rendering and command behavior**
+- [x] **Step 3: Implement safe rendering and command behavior**
 
 Add a `compare` subcommand that reads either direct JSON files or packet
 directories. Default output is concise human text; `--json` is deterministic
 and contains no absolute paths. Return 0 for equal packets, 1 for differences,
 and 2 for invalid input/integrity failures.
 
-- [ ] **Step 4: Run final validation and commit**
+- [x] **Step 4: Run final validation and commit**
 
 Run:
 

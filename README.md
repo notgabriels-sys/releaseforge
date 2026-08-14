@@ -20,10 +20,14 @@ automatic platform-compliance tool.
   evidence;
 - builds `RELEASE_PROOF.md`, `RELEASE_PROOF.json`, and a self-contained
   `RELEASE_READINESS.html` document;
+- assigns each packet a deterministic content ID and compares two packets by
+  verified facts, declarations, workflow profile, decision, and findings;
 - never uploads, copies, renames, deletes, or modifies a declared source asset.
 
 The generated packet contains relative paths and local file facts, never
-machine-specific source paths or source media files.
+machine-specific source paths or source media files. Its `proof_id` is a
+deterministic content identifier, not a cryptographic signature, proof of
+authorship, or approval.
 
 ## The evidence boundary
 
@@ -79,6 +83,20 @@ releaseforge build /path/to/release --output /path/to/release-proof
 there is at least one blocker, and `2` for invalid declarations, unreadable
 assets, or unsafe/output errors. A `needs evidence` item remains visible even
 when it is not a configured blocker.
+
+Compare two existing proof packets after a revision or handoff. Each argument
+may be a packet directory or a direct `RELEASE_PROOF.json` path:
+
+```bash
+releaseforge compare /path/to/proof-before /path/to/proof-after
+releaseforge compare /path/to/proof-before /path/to/proof-after --json
+```
+
+`compare` reads only the packet JSON, validates the packet content ID and
+source-path boundary, then reports captured changes. It returns `0` for
+equivalent captured content, `1` when there are differences, and `2` for an
+invalid packet or a mismatching content ID. It does not read source media,
+choose which packet is correct, or establish approval.
 
 ## `release.toml`
 

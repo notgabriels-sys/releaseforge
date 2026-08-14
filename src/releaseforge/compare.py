@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from collections.abc import Mapping
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any, Literal
 
 from releaseforge.report import packet_proof_id
@@ -37,6 +37,54 @@ _ASSET_FACT_FIELDS = (
     "sample_rate",
     "channels",
     "sample_width_bytes",
+)
+_PACKET_FIELDS = frozenset(
+    {
+        "schema_version",
+        "proof_id",
+        "boundary",
+        "decision",
+        "release",
+        "requirements",
+        "declarations",
+        "assets",
+        "findings",
+    }
+)
+_RELEASE_FIELDS = frozenset(
+    {"title", "artist", "catalogue_number", "planned_release_date", "evidence_category"}
+)
+_REQUIREMENT_FIELDS = frozenset(
+    {
+        "minimum_cover_pixels",
+        "require_square_cover",
+        "allowed_audio_extensions",
+        "evidence_category",
+        "note",
+    }
+)
+_DECLARATION_NAMES = frozenset({"rights_review", "metadata_review", "artwork_approval"})
+_DECLARATION_FIELDS = frozenset({"value", "evidence_category", "note"})
+_ASSET_FIELDS = frozenset(
+    {
+        "role",
+        "relative_path",
+        "evidence_category",
+        "byte_size",
+        "sha256",
+        "extension",
+        "width",
+        "height",
+        "image_mode",
+        "duration_seconds",
+        "sample_rate",
+        "channels",
+        "sample_width_bytes",
+    }
+)
+_FINDING_FIELDS = frozenset({"code", "severity", "evidence_category", "message", "subject"})
+_DECISION_FIELDS = frozenset(
+    {"state", "profile_checked", "blocker_count", "warning_count", "needs_evidence_count"}
 )
 
 
@@ -179,13 +227,27 @@ def render_comparison_text(comparison: Comparison) -> str:
 def _validate_packet_payload(payload: Any) -> None:
     if not isinstance(payload, dict):
         raise ComparisonError("proof packet root must be an object")
+    _validate_fields(payload, "proof packet", _PACKET_FIELDS)
     if payload.get("schema_version") != 1:
         raise ComparisonError("proof packet schema_version must be 1")
     proof_id = payload.get("proof_id")
     if not isinstance(proof_id, str) or not proof_id.startswith("rfp_"):
         raise ComparisonError("proof packet has no valid proof ID")
-    for key in ("release", "requirements", "declarations", "decision"):
-        _mapping(payload.get(key), f"proof packet {key}")
+    _validate_fields(
+        _mapping(payload["release"], "proof packet release"),
+        "proof packet release",
+        _RELEASE_FIELDS,
+    )
+    _validate_fields(
+        _mapping(payload["requirements"], "proof packet requirements"),
+        "proof packet requirements",
+        _REQUIREMENT_FIELDS,
+    )
+    _validate_fields(
+        _mapping(payload["decision"], "proof packet decision"),
+        "proof packet decision",
+        _DECISION_FIELDS,
+    )
     for key in ("assets", "findings"):
         if not isinstance(payload.get(key), list):
             raise ComparisonError(f"proof packet {key} must be a list")
@@ -198,9 +260,11 @@ def _validate_assets(assets: list[Any]) -> None:
     roles: set[str] = set()
     for asset in assets:
         mapping = _mapping(asset, "proof packet asset")
+        _validate_fields(mapping, "proof packet asset", _ASSET_FIELDS)
         for key in ("role", "relative_path", "sha256"):
             if not isinstance(mapping.get(key), str) or not mapping[key]:
                 raise ComparisonError(f"proof packet asset {key} must be a non-empty string")
+        _validate_relative_asset_path(mapping["relative_path"])
         if mapping["role"] in roles:
             raise ComparisonError("proof packet asset roles must be unique")
         roles.add(mapping["role"])
@@ -209,16 +273,33 @@ def _validate_assets(assets: list[Any]) -> None:
 def _validate_findings(findings: list[Any]) -> None:
     for finding in findings:
         mapping = _mapping(finding, "proof packet finding")
+        _validate_fields(mapping, "proof packet finding", _FINDING_FIELDS)
         for key in ("code", "severity", "evidence_category", "message", "subject"):
             if not isinstance(mapping.get(key), str):
                 raise ComparisonError(f"proof packet finding {key} must be a string")
 
 
 def _validate_declarations(declarations: Any) -> None:
-    for name, declaration in _mapping(declarations, "proof packet declarations").items():
+    declaration_map = _mapping(declarations, "proof packet declarations")
+    _validate_fields(declaration_map, "proof packet declarations", _DECLARATION_NAMES)
+    for name, declaration in declaration_map.items():
         mapping = _mapping(declaration, f"proof packet declaration {name}")
+        _validate_fields(mapping, f"proof packet declaration {name}", _DECLARATION_FIELDS)
         if not isinstance(mapping.get("value"), str):
             raise ComparisonError(f"proof packet declaration {name} value must be a string")
+
+
+def _validate_relative_asset_path(relative_path: str) -> None:
+    path = PurePosixPath(relative_path)
+    has_windows_drive = len(relative_path) > 1 and relative_path[1] == ":"
+    if (
+        "\\" in relative_path
+        or path.is_absolute()
+        or ".." in path.parts
+        or relative_path == "."
+        or has_windows_drive
+    ):
+        raise ComparisonError("proof packet relative asset path is not a safe POSIX-relative path")
 
 
 def _compare_mapping(
@@ -351,7 +432,7 @@ def _compare_findings(before: list[Any], after: list[Any], changes: list[Change]
                 code="finding_removed",
                 category="finding",
                 subject=finding["subject"],
-                before=finding,
+                before=_finding_summary(finding),
                 after=None,
             )
         )
@@ -363,7 +444,7 @@ def _compare_findings(before: list[Any], after: list[Any], changes: list[Change]
                 category="finding",
                 subject=finding["subject"],
                 before=None,
-                after=finding,
+                after=_finding_summary(finding),
             )
         )
 
@@ -372,6 +453,14 @@ def _mapping(value: Any, label: str) -> Mapping[str, Any]:
     if not isinstance(value, dict):
         raise ComparisonError(f"{label} must be an object")
     return value
+
+
+def _validate_fields(mapping: Mapping[str, Any], label: str, expected: frozenset[str]) -> None:
+    fields = set(mapping)
+    if fields - expected:
+        raise ComparisonError(f"{label} has an unexpected field")
+    if expected - fields:
+        raise ComparisonError(f"{label} is missing a required field")
 
 
 def _asset_map(assets: list[Any]) -> dict[str, dict[str, Any]]:
@@ -385,6 +474,16 @@ def _asset_summary(asset: dict[str, Any] | None) -> dict[str, Any] | None:
         "relative_path": asset["relative_path"],
         "sha256": asset["sha256"],
         "byte_size": asset.get("byte_size"),
+    }
+
+
+def _finding_summary(finding: dict[str, Any]) -> dict[str, str]:
+    """Return only stable finding identifiers, excluding free-form message text."""
+    return {
+        "code": finding["code"],
+        "severity": finding["severity"],
+        "evidence_category": finding["evidence_category"],
+        "subject": finding["subject"],
     }
 
 

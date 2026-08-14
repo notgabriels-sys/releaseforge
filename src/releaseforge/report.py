@@ -101,6 +101,8 @@ def render_markdown(report: Report) -> str:
         "",
         f"**Decision: {_markdown(decision['state'])}**",
         "",
+        f"**Proof ID: `{payload['proof_id']}`**",
+        "",
         f"> **Boundary:** {_markdown(BOUNDARY)}",
         "",
         "## Decision summary",
@@ -273,6 +275,7 @@ def render_html(report: Report) -> str:
       <h1>{escape(release["title"])}</h1>
       <p>{escape(release["artist"])} · {escape(release["catalogue_number"])} · planned {escape(release["planned_release_date"])}</p>
       <div class=\"decision {state_class}\">{escape(decision["state"])}</div>
+      <p>Packet proof ID: <code>{escape(payload["proof_id"])}</code></p>
     </header>
 
     <section class=\"summary\" aria-label=\"Decision summary\">

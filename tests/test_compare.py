@@ -8,7 +8,7 @@ from releaseforge.compare import ComparisonError, compare_packets, comparison_pa
 from releaseforge.config import load_plan
 from releaseforge.evaluate import evaluate_release
 from releaseforge.inspect import inspect_release
-from releaseforge.report import make_report, write_packet
+from releaseforge.report import make_report, packet_proof_id, write_packet
 from tests.helpers import write_synthetic_release
 
 
@@ -67,6 +67,30 @@ def test_load_packet_rejects_a_proof_id_that_does_not_match_contents(tmp_path):
     proof_path.write_text(json.dumps(payload), encoding="utf-8")
 
     with pytest.raises(ComparisonError, match="does not match"):
+        load_packet(packet)
+
+
+def test_load_packet_rejects_an_absolute_asset_path_even_with_a_matching_proof_id(tmp_path):
+    packet = _packet(write_synthetic_release(tmp_path / "release"), tmp_path / "packet")
+    proof_path = packet / "RELEASE_PROOF.json"
+    payload = json.loads(proof_path.read_text(encoding="utf-8"))
+    payload["assets"][0]["relative_path"] = str(tmp_path / "source-cover.jpg")
+    payload["proof_id"] = packet_proof_id(payload)
+    proof_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(ComparisonError, match="relative asset path"):
+        load_packet(packet)
+
+
+def test_load_packet_rejects_unexpected_packet_fields_even_with_a_matching_proof_id(tmp_path):
+    packet = _packet(write_synthetic_release(tmp_path / "release"), tmp_path / "packet")
+    proof_path = packet / "RELEASE_PROOF.json"
+    payload = json.loads(proof_path.read_text(encoding="utf-8"))
+    payload["release"]["source_path"] = str(tmp_path / "source")
+    payload["proof_id"] = packet_proof_id(payload)
+    proof_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(ComparisonError, match="unexpected field"):
         load_packet(packet)
 
 

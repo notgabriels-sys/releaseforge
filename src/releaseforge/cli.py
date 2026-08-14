@@ -3,10 +3,18 @@
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from collections.abc import Sequence
 from pathlib import Path
 
+from releaseforge.compare import (
+    ComparisonError,
+    compare_packets,
+    comparison_payload,
+    load_packet,
+    render_comparison_text,
+)
 from releaseforge.config import ConfigError, load_plan
 from releaseforge.evaluate import evaluate_release
 from releaseforge.inspect import InspectionError, inspect_release
@@ -48,6 +56,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.command == "init":
         return _init(Path(args.release_dir))
+    if args.command == "compare":
+        return _compare(Path(args.before), Path(args.after), as_json=args.as_json)
 
     try:
         report = _load_report(Path(args.release_dir))
@@ -90,6 +100,15 @@ def _parser() -> argparse.ArgumentParser:
     build_parser.add_argument(
         "--output", "-o", required=True, help="new output directory outside source"
     )
+
+    compare_parser = commands.add_parser(
+        "compare", help="compare two local proof packets without writing"
+    )
+    compare_parser.add_argument("before", help="proof packet directory or RELEASE_PROOF.json")
+    compare_parser.add_argument("after", help="proof packet directory or RELEASE_PROOF.json")
+    compare_parser.add_argument(
+        "--json", dest="as_json", action="store_true", help="print machine-readable JSON"
+    )
     return parser
 
 
@@ -117,6 +136,22 @@ def _load_report(release_dir: Path) -> Report:
     plan = load_plan(release_dir)
     inspection = inspect_release(plan)
     return make_report(plan, inspection, evaluate_release(plan, inspection))
+
+
+def _compare(before: Path, after: Path, *, as_json: bool) -> int:
+    """Compare two existing packet captures without reading or writing source media."""
+    try:
+        comparison = compare_packets(load_packet(before), load_packet(after))
+    except ComparisonError as error:
+        _error(str(error))
+        return 2
+    if as_json:
+        print(
+            json.dumps(comparison_payload(comparison), ensure_ascii=False, indent=2, sort_keys=True)
+        )
+    else:
+        print(render_comparison_text(comparison))
+    return 0 if comparison.is_equal else 1
 
 
 def _print_summary(report: Report) -> None:
