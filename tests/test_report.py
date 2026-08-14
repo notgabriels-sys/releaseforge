@@ -63,3 +63,11 @@ def test_payload_keeps_evidence_categories_explicit(synthetic_release):
     assert payload["assets"][0]["evidence_category"] == "verified_file_fact"
     assert payload["declarations"]["rights_review"]["evidence_category"] == "declared"
     assert json.loads(json.dumps(payload, sort_keys=True)) == payload
+
+
+def test_payload_has_a_stable_proof_id(synthetic_release):
+    first = report_payload(_report(synthetic_release))
+    second = report_payload(_report(synthetic_release))
+
+    assert first["proof_id"] == second["proof_id"]
+    assert first["proof_id"].startswith("rfp_")

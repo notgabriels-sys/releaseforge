@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
+from collections.abc import Mapping
 from dataclasses import dataclass
 from html import escape
 from pathlib import Path
@@ -40,7 +42,7 @@ def make_report(plan: ReleasePlan, inspection: Inspection, evaluation: Evaluatio
 def report_payload(report: Report) -> dict[str, Any]:
     """Return a JSON-ready report without machine-specific source paths."""
     plan = report.plan
-    return {
+    payload = {
         "schema_version": 1,
         "boundary": BOUNDARY,
         "decision": {
@@ -72,6 +74,20 @@ def report_payload(report: Report) -> dict[str, Any]:
         "assets": [_asset_payload(asset) for asset in report.inspection.assets],
         "findings": [_finding_payload(finding) for finding in report.evaluation.findings],
     }
+    payload["proof_id"] = packet_proof_id(payload)
+    return payload
+
+
+def packet_proof_id(payload: Mapping[str, Any]) -> str:
+    """Return a stable identifier for every packet field except its proof-ID field."""
+    canonical_payload = {key: value for key, value in payload.items() if key != "proof_id"}
+    encoded = json.dumps(
+        canonical_payload,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
+    return f"rfp_{hashlib.sha256(encoded).hexdigest()[:20]}"
 
 
 def render_markdown(report: Report) -> str:
