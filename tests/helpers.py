@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import wave
 from pathlib import Path
 
@@ -82,3 +83,17 @@ def write_synthetic_release(
         output.setframerate(frame_rate)
         output.writeframes(b"\x00\x00" * frame_count)
     return root
+
+
+def tree_digest(root: Path) -> tuple[tuple[str, str], ...]:
+    """Return a deterministic fingerprint of every regular source file under *root*."""
+    entries: list[tuple[str, str]] = []
+    for path in sorted(root.rglob("*")):
+        if path.is_file():
+            entries.append(
+                (
+                    path.relative_to(root).as_posix(),
+                    hashlib.sha256(path.read_bytes()).hexdigest(),
+                )
+            )
+    return tuple(entries)
