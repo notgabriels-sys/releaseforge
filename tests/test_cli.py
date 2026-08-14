@@ -98,3 +98,14 @@ def test_compare_accepts_a_direct_json_path_and_can_emit_json(tmp_path, capsys):
     payload = json.loads(capsys.readouterr().out)
     assert payload["equivalent"] is True
     assert payload["change_count"] == 0
+
+
+def test_demo_creates_a_synthetic_end_to_end_flow(tmp_path, capsys):
+    destination = tmp_path / "demo"
+
+    assert main(["demo", str(destination)]) == 0
+
+    output = capsys.readouterr().out
+    assert "synthetic" in output.lower()
+    assert (destination / "START_HERE.md").is_file()
+    assert main(["compare", str(destination / "proof-v1"), str(destination / "proof-v2")]) == 1

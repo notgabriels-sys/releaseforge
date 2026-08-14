@@ -16,6 +16,7 @@ from releaseforge.compare import (
     render_comparison_text,
 )
 from releaseforge.config import ConfigError, load_plan
+from releaseforge.demo import DemoError, create_demo
 from releaseforge.evaluate import evaluate_release
 from releaseforge.inspect import InspectionError, inspect_release
 from releaseforge.report import Report, ReportError, make_report, report_payload, write_packet
@@ -56,6 +57,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.command == "init":
         return _init(Path(args.release_dir))
+    if args.command == "demo":
+        return _demo(Path(args.destination))
     if args.command == "compare":
         return _compare(Path(args.before), Path(args.after), as_json=args.as_json)
 
@@ -91,6 +94,11 @@ def _parser() -> argparse.ArgumentParser:
 
     init_parser = commands.add_parser("init", help="create a commented release.toml template")
     init_parser.add_argument("release_dir", help="new or existing release directory")
+
+    demo_parser = commands.add_parser(
+        "demo", help="create a synthetic two-version workflow in a new directory"
+    )
+    demo_parser.add_argument("destination", help="new directory for synthetic demo files")
 
     check_parser = commands.add_parser("check", help="read local facts and print a decision")
     check_parser.add_argument("release_dir", help="directory containing release.toml")
@@ -129,6 +137,18 @@ def _init(release_dir: Path) -> int:
     print(
         "Created release.toml. Add your local paths and verify the declared workflow requirements."
     )
+    return 0
+
+
+def _demo(destination: Path) -> int:
+    """Create a local synthetic demo without inspecting any user release material."""
+    try:
+        create_demo(destination)
+    except DemoError as error:
+        _error(str(error))
+        return 2
+    print("Created a synthetic local Releaseforge demo.")
+    print("Open START_HERE.md in the destination, then run: releaseforge compare proof-v1 proof-v2")
     return 0
 
 

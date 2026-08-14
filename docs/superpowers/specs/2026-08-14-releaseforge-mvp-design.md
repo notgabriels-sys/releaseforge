@@ -42,19 +42,23 @@ path.
 
 ## MVP user flow
 
-1. `releaseforge init RELEASE_DIR` creates a strict, commented `release.toml`
+1. `releaseforge demo DESTINATION` optionally creates two synthetic release
+   folders and their normal proof packets in a new destination only. It lets a
+   new user run `compare proof-v1 proof-v2` immediately without using real
+   media; its guide states that the declarations are illustrative, not evidence.
+2. `releaseforge init RELEASE_DIR` creates a strict, commented `release.toml`
    only when the file does not already exist.
-2. The user records release metadata, relative paths to the cover and tracks,
+3. The user records release metadata, relative paths to the cover and tracks,
    and the delivery requirements they have chosen for this handoff.
-3. `releaseforge check RELEASE_DIR` reads the plan and assets without writing
+4. `releaseforge check RELEASE_DIR` reads the plan and assets without writing
    anything. It reports blockers, warnings, verified file facts, and declared
    items that still need evidence.
-4. `releaseforge build RELEASE_DIR --output PROOF_DIR` writes a new proof
+5. `releaseforge build RELEASE_DIR --output PROOF_DIR` writes a new proof
    directory. It never modifies the release folder and refuses to overwrite an
    existing output directory.
-5. The recipient opens `RELEASE_READINESS.html` or `RELEASE_PROOF.md` and can
+6. The recipient opens `RELEASE_READINESS.html` or `RELEASE_PROOF.md` and can
    see the same deterministic findings, asset hashes, and declared boundaries.
-6. After a revision, `releaseforge compare BEFORE_PROOF AFTER_PROOF` validates
+7. After a revision, `releaseforge compare BEFORE_PROOF AFTER_PROOF` validates
    both packet content IDs and reports which verified asset facts, declarations,
    workflow rules, decisions, or findings changed. It never reads source media.
 
@@ -139,8 +143,10 @@ The Python package is split into small pure layers:
    HTML document, including a deterministic proof ID.
 5. `compare.py` validates packet content IDs and derives a categorized,
    source-path-free difference model without reading source media.
-6. `cli.py` owns `init`, read-only `check`, non-overwriting `build`, and
-   read-only `compare`.
+6. `demo.py` generates a synthetic two-version trial through the same public
+   release-proof layers, with no access to a user's source media.
+7. `cli.py` owns `demo`, `init`, read-only `check`, non-overwriting `build`,
+   and read-only `compare`.
 
 Pillow provides image facts; the Python standard library handles TOML, WAV,
 hashing, paths, JSON, HTML escaping, and reports. The product remains offline
@@ -160,6 +166,8 @@ by design.
 - `compare` distinguishes verified asset changes from declared review changes,
   uses stable content IDs, returns the documented exit status, and rejects
   unsafe absolute asset paths or mismatching IDs.
+- `demo` refuses an existing destination, creates two synthetic proof packets,
+  and yields a path-free captured cover change through `compare`.
 - Tests cover parser failures, file inspection, evaluation, every output
   format, CLI exit status, source immutability, fresh wheel installation, and
   a targeted no-network/no-subprocess/no-credential scan.

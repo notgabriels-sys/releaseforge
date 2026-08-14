@@ -22,6 +22,8 @@ automatic platform-compliance tool.
   `RELEASE_READINESS.html` document;
 - assigns each packet a deterministic content ID and compares two packets by
   verified facts, declarations, workflow profile, decision, and findings;
+- creates an optional two-version synthetic demo that exercises the same local
+  proof and comparison path without touching a real release folder;
 - never uploads, copies, renames, deletes, or modifies a declared source asset.
 
 The generated packet contains relative paths and local file facts, never
@@ -56,6 +58,19 @@ python3 -m pip install .
 ```
 
 ## Use
+
+Try the full workflow safely before pointing it at real media:
+
+```bash
+releaseforge demo ./releaseforge-demo
+cd ./releaseforge-demo
+releaseforge compare proof-v1 proof-v2
+```
+
+The demo creates two synthetic release folders, two standard packets, and a
+`START_HERE.md` guide. It intentionally reports a changed cover as a verified
+asset difference. Its media and declarations are illustrative only, not rights,
+approval, or delivery evidence. `demo` refuses an existing destination.
 
 Create a commented declaration in a new or existing release folder:
 
