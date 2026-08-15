@@ -7,10 +7,10 @@
 
 Releaseforge already has a substantial local workflow: strict release declarations,
 portable proof packets, offline HTML, comparison, companion-handoff reconciliation,
-and a synthetic demo. The branch currently has no GitHub Actions workflow and no
-committed dependency lock. A contributor or evaluator therefore cannot see whether
-the declared Python support, linting, package build, and installed command work
-reliably outside a developer checkout.
+and a synthetic demo. The branch has a small Linux-only source-tree CI check, but
+no committed dependency lock, pinned Actions, macOS coverage, or installed-artifact
+smoke test. A contributor or evaluator therefore cannot see whether the declared
+Python support and built command work reliably outside a developer checkout.
 
 For a local-first tool used before a real delivery handoff, that reliability gap is
 more important than adding another feature. Source-tree tests alone do not prove
@@ -19,8 +19,7 @@ Pillow dependency or that the synthetic demo still works after installation.
 
 ## Decision
 
-Add a narrowly scoped CI foundation on a child branch of
-`codex/initial-implementation`:
+Enhance the existing CI on a child branch of `codex/initial-implementation`:
 
 1. Commit a `uv.lock` generated from the existing project declaration, including
    the existing `dev` extra.
@@ -29,8 +28,9 @@ Add a narrowly scoped CI foundation on a child branch of
 3. Run the test suite on Python 3.11 and 3.13 on Ubuntu, plus Python 3.13 on
    macOS. This covers the minimum supported interpreter, a current interpreter,
    and the principal local platform without making a speculative Windows promise.
-4. Run lint, formatting, source-distribution build, wheel build, and installed-
-   artifact smoke checks on Ubuntu 3.11.
+4. Preserve the existing compile check and run lint, formatting, source-
+   distribution build, wheel build, and installed-artifact smoke checks on
+   Ubuntu 3.11.
 5. Add a small README CI badge and a precise note that CI verifies the local
    tool only; it cannot certify distributor acceptance, rights, approvals, or a
    real release.

@@ -4,7 +4,7 @@
 
 **Goal:** Make the existing Releaseforge proof workflow reproducibly testable on GitHub and prove that both built distributions expose a working synthetic demo.
 
-**Architecture:** Commit the existing project's uv resolution as `uv.lock`, then use a least-privilege GitHub Actions workflow for a compact OS/Python test matrix and a separate lint/build/artifact-smoke job. The smoke job invokes only the packaged `releaseforge` command against new temporary synthetic-demo directories, proving packaging and runtime dependencies without touching real release files.
+**Architecture:** Commit the existing project's uv resolution as `uv.lock`, then enhance the existing GitHub Actions workflow with least-privilege permissions, a compact OS/Python test matrix, and a separate lint/build/artifact-smoke job. The smoke job invokes only the packaged `releaseforge` command against new temporary synthetic-demo directories, proving packaging and runtime dependencies without touching real release files.
 
 **Tech Stack:** Python 3.11/3.13, uv 0.11.14, pytest, Ruff, setuptools distributions, GitHub Actions.
 
@@ -25,7 +25,7 @@
 | File | Responsibility |
 | --- | --- |
 | `uv.lock` | Exact dependency resolution for the existing project and `dev` extra. |
-| `.github/workflows/ci.yml` | Read-only GitHub CI matrix, lint/build, and installed-artifact smoke contract. |
+| `.github/workflows/ci.yml` | Enhanced read-only GitHub CI matrix, preserved compile check, lint/build, and installed-artifact smoke contract. |
 | `README.md` | Visible CI status link and a narrow explanation of what CI does and does not verify. |
 
 ### Task 1: Commit a reproducible existing environment
@@ -82,7 +82,7 @@ git commit -m "build: lock Releaseforge dependencies"
 ### Task 2: Add least-privilege CI and artifact smoke coverage
 
 **Files:**
-- Create: `.github/workflows/ci.yml`
+- Modify: `.github/workflows/ci.yml`
 
 **Interfaces:**
 - Consumes: `uv.lock`, `pyproject.toml`, the `releaseforge` console entry point,
@@ -154,6 +154,7 @@ run:
 ```yaml
 - run: uv run --frozen ruff check src tests
 - run: uv run --frozen ruff format --check src tests
+- run: uv run --frozen python -m compileall -q src
 - run: uv build --no-sources
 ```
 

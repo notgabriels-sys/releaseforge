@@ -77,6 +77,9 @@ jobs:
       - name: Check formatting
         run: uv run --frozen ruff format --check src tests
 
+      - name: Compile package
+        run: uv run --frozen python -m compileall -q src
+
       - name: Build distributions
         run: uv build --no-sources
 
