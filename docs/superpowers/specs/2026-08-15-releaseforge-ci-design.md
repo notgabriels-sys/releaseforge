@@ -86,9 +86,10 @@ folder.
 - GitHub Actions permissions are limited to `contents: read`.
 - Actions are pinned to full commit SHAs, matching the existing sampleproof CI
   convention in this GitHub organization.
-- The workflow triggers only on push and pull-request events; it does not
-  publish a distribution, create a release, upload project assets, alter issues,
-  or access release/distributor/client systems.
+- The workflow triggers on pull requests and pushes to `main`, avoiding a
+  duplicate branch-push run when a pull request is opened. It does not publish
+  a distribution, create a release, upload project assets, alter issues, or
+  access release/distributor/client systems.
 - Dependency retrieval during CI is ordinary package installation. It is not a
   workflow for raw music, artwork, proof packet, customer, or credential data.
 - The README badge reports workflow status, not delivery compliance or a

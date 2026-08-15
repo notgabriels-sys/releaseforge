@@ -99,6 +99,8 @@ name: CI
 
 on:
   push:
+    branches:
+      - main
   pull_request:
 
 permissions:
@@ -109,8 +111,9 @@ concurrency:
   cancel-in-progress: true
 ```
 
-Expected: the workflow can only read repository contents and newer pushes cancel
-redundant in-progress checks for the same ref.
+Expected: the workflow can only read repository contents, pull requests provide
+feature-branch verification, pushes to `main` verify the merged state, and newer
+pushes cancel redundant in-progress checks for the same ref.
 
 - [ ] **Step 2: Add the three-entry test matrix**
 
