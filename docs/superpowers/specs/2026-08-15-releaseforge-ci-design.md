@@ -1,6 +1,6 @@
 # Releaseforge CI and installed-artifact verification — design
 
-**Date:** 2026-08-15  
+**Date:** 2026-08-15
 **Status:** Approved through Gabriel's standing instruction to choose useful work and keep building, with the existing Releaseforge draft as the base.
 
 ## Problem
