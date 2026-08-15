@@ -2,6 +2,8 @@
 
 **Local release proof before distributor upload.**
 
+[![CI](https://github.com/notgabriels-sys/releaseforge/actions/workflows/ci.yml/badge.svg)](https://github.com/notgabriels-sys/releaseforge/actions/workflows/ci.yml)
+
 Releaseforge turns one local release folder into a clear, portable decision
 record. It reads the files you declare, verifies what can be measured directly,
 keeps supplied information visibly separate from file facts, and writes an
@@ -51,6 +53,11 @@ A `PROFILE CHECKED` outcome means only that the local files and declarations
 meet the selected workflow profile. It **does not establish** ownership,
 licensing, approvals, distributor acceptance, platform compliance, or public
 release readiness.
+
+The CI workflow verifies the checked-in source, tests, package distributions,
+and synthetic demo on its declared Python/OS matrix. It does not inspect real
+release material or certify distributor acceptance, rights, approvals, or any
+public release state.
 
 ## Install
 
