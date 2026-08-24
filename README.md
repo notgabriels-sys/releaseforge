@@ -27,7 +27,7 @@ automatic platform-compliance tool.
 - optionally writes a separate Markdown, JSON, and offline HTML comparison
   packet for a reviewer, while default comparison remains read-only;
 - can reconcile one validated Releaseforge proof packet with selected
-  Mastergate-, Releaseledger-, and/or Coverforge-compatible version-1 manifest
+  Releaseledger- and/or Coverforge-compatible version-1 manifest
   captures, then write a separate local companion-handoff packet;
 - creates an optional two-version synthetic demo that exercises the same local
   proof and comparison path without touching a real release folder;
@@ -138,19 +138,18 @@ the write confirmation goes to stderr.
 ## Companion handoff
 
 If a handoff already has a Releaseforge proof packet and one or more compatible
-Mastergate, Releaseledger, or Coverforge captures, create one separate review
+Releaseledger or Coverforge captures, create one separate review
 dossier:
 
 ```bash
 releaseforge handoff /path/to/release-proof \
-  --mastergate /path/to/mastergate-evidence/manifest.json \
   --releaseledger /path/to/releaseledger-dossier/manifest.json \
   --coverforge /path/to/coverforge-delivery/manifest.json \
   --output /path/to/release-handoff
 ```
 
-`--mastergate`, `--releaseledger`, and `--coverforge` are individually
-optional, but at least one is required. They accept only the known, portable
+`--releaseledger` and `--coverforge` are individually optional, but at least one
+is required. They accept only the known, portable
 version-1 `manifest.json` schema shapes used by the companion tools.
 Releaseforge hashes the supplied manifest bytes and validates that shape; this
 identifies only the local bytes selected for the handoff, not the source
@@ -167,8 +166,6 @@ packet directory and every selected companion-manifest directory. It contains:
 
 The handoff checks only limited relationships that are present in the captures:
 
-- a Releaseforge WAV asset and a Mastergate measurement align only when their
-  captured SHA-256 values are identical;
 - shared declared release fields align only when Releaseforge and Releaseledger
   record the same artist, title, catalogue number, and, when supplied by
   Releaseledger, date;

@@ -21,7 +21,7 @@ platform-compliance claim.
 
 Releaseforge gains one optional `--coverforge PATH` argument on the existing
 `handoff` command. `PATH` must name a direct Coverforge `manifest.json` file.
-At least one of `--mastergate`, `--releaseledger`, and `--coverforge` remains
+At least one of `--releaseledger` and `--coverforge` remains
 required.
 
 The feature:
@@ -131,7 +131,7 @@ is `needs_evidence`.
 ## Output contract
 
 The existing `RELEASE_HANDOFF.json` gets a top-level `coverforge` member beside
-`mastergate` and `releaseledger`:
+`releaseledger`:
 
 ```json
 {

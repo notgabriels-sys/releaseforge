@@ -16,7 +16,6 @@ from releaseforge.handoff import (
     build_handoff,
     handoff_exit_code,
     handoff_payload,
-    load_mastergate_manifest,
     load_releaseledger_manifest,
     render_handoff_html,
     render_handoff_markdown,
@@ -24,18 +23,6 @@ from releaseforge.handoff import (
 )
 from releaseforge.inspect import inspect_release
 from releaseforge.report import make_report, packet_proof_id, report_payload, write_packet
-
-
-def test_load_mastergate_manifest_keeps_only_safe_captured_fields(tmp_path: Path):
-    manifest_path = _write_mastergate_manifest(tmp_path / "mastergate.json")
-
-    manifest = load_mastergate_manifest(manifest_path)
-
-    assert manifest.manifest_sha256 == _sha256_file(manifest_path)
-    assert manifest.measurements[0].sha256 == "a" * 64
-    assert manifest.measurements[0].filename == "01-track.wav"
-    assert not hasattr(manifest, "input_directory")
-    assert not hasattr(manifest, "contract_source")
 
 
 def test_load_releaseledger_manifest_rejects_an_unknown_field(tmp_path: Path):
@@ -47,15 +34,12 @@ def test_load_releaseledger_manifest_rejects_an_unknown_field(tmp_path: Path):
         load_releaseledger_manifest(manifest_path)
 
 
-def test_build_handoff_records_matching_captured_wav_hashes_and_declarations(
+def test_build_handoff_records_matching_releaseledger_declarations(
     synthetic_release: Path, tmp_path: Path
 ):
     proof = _proof_packet(synthetic_release)
     handoff = build_handoff(
         proof,
-        mastergate=load_mastergate_manifest(
-            _write_mastergate_manifest(tmp_path / "mastergate.json", sha256=_proof_track_sha(proof))
-        ),
         releaseledger=load_releaseledger_manifest(
             _write_releaseledger_manifest(tmp_path / "releaseledger.json")
         ),
@@ -63,8 +47,13 @@ def test_build_handoff_records_matching_captured_wav_hashes_and_declarations(
 
     assert handoff.is_aligned is True
     assert handoff.findings == ()
-    assert handoff.mastergate_linkage is not None
-    assert handoff.mastergate_linkage.matched_releaseforge_wav_roles == ("track:1",)
+    assert handoff.releaseledger_alignment is not None
+    assert handoff.releaseledger_alignment.matching_fields == (
+        "artist",
+        "title",
+        "catalogue_number",
+        "release_date",
+    )
     assert handoff_exit_code(handoff) == 0
 
 
@@ -87,6 +76,7 @@ def test_build_handoff_reconciles_matching_coverforge_source(
     payload = handoff_payload(handoff)
 
     assert handoff.is_aligned is True
+    assert payload["schema_version"] == 2
     assert handoff.coverforge_linkage is not None
     assert handoff.coverforge_linkage.matching_source_fields == (
         "sha256",
@@ -139,9 +129,6 @@ def test_build_handoff_emits_needs_evidence_for_mismatched_companion_values(
     proof = _proof_packet(synthetic_release)
     handoff = build_handoff(
         proof,
-        mastergate=load_mastergate_manifest(
-            _write_mastergate_manifest(tmp_path / "mastergate.json", sha256="b" * 64)
-        ),
         releaseledger=load_releaseledger_manifest(
             _write_releaseledger_manifest(
                 tmp_path / "releaseledger.json", release_title="Different title"
@@ -150,10 +137,7 @@ def test_build_handoff_emits_needs_evidence_for_mismatched_companion_values(
     )
 
     assert handoff.is_aligned is False
-    assert {finding.code for finding in handoff.findings} == {
-        "mastergate_wav_hash_unmatched",
-        "releaseledger_title_mismatch",
-    }
+    assert {finding.code for finding in handoff.findings} == {"releaseledger_title_mismatch"}
     assert {finding.severity for finding in handoff.findings} == {"needs_evidence"}
     assert handoff_exit_code(handoff) == 1
 
@@ -165,8 +149,10 @@ def test_write_handoff_packet_omits_input_paths_and_escapes_html(
     proof.payload["release"]["title"] = "<script>alert(1)</script>"
     handoff = build_handoff(
         proof,
-        mastergate=load_mastergate_manifest(
-            _write_mastergate_manifest(tmp_path / "mastergate.json", sha256=_proof_track_sha(proof))
+        releaseledger=load_releaseledger_manifest(
+            _write_releaseledger_manifest(
+                tmp_path / "releaseledger.json", release_title="<script>alert(1)</script>"
+            )
         ),
     )
     destination = tmp_path / "handoff-output"
@@ -224,8 +210,8 @@ def test_write_handoff_packet_refuses_output_inside_an_input_tree(
     proof = _proof_packet(synthetic_release)
     handoff = build_handoff(
         proof,
-        mastergate=load_mastergate_manifest(
-            _write_mastergate_manifest(tmp_path / "mastergate.json", sha256=_proof_track_sha(proof))
+        releaseledger=load_releaseledger_manifest(
+            _write_releaseledger_manifest(tmp_path / "releaseledger.json")
         ),
     )
     protected_root = tmp_path / "proof"
@@ -238,10 +224,9 @@ def test_write_handoff_packet_refuses_output_inside_an_input_tree(
 def test_handoff_cli_writes_an_aligned_packet(
     synthetic_release: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ):
-    proof = _proof_packet(synthetic_release)
     proof_dir = _write_proof_packet(synthetic_release, tmp_path / "proof")
-    mastergate_path = _write_mastergate_manifest(
-        tmp_path / "mastergate-input" / "manifest.json", sha256=_proof_track_sha(proof)
+    releaseledger_path = _write_releaseledger_manifest(
+        tmp_path / "releaseledger-input" / "manifest.json"
     )
     output_dir = tmp_path / "handoff"
 
@@ -249,8 +234,8 @@ def test_handoff_cli_writes_an_aligned_packet(
         [
             "handoff",
             str(proof_dir),
-            "--mastergate",
-            str(mastergate_path),
+            "--releaseledger",
+            str(releaseledger_path),
             "--output",
             str(output_dir),
         ]
@@ -335,11 +320,9 @@ def test_handoff_cli_escapes_active_markdown_from_a_valid_proof_packet(
     proof_path.write_text(
         json.dumps(proof_payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
-    mastergate_path = _write_mastergate_manifest(
-        tmp_path / "mastergate" / "manifest.json",
-        sha256=next(
-            asset["sha256"] for asset in proof_payload["assets"] if asset["role"] == "track:1"
-        ),
+    releaseledger_path = _write_releaseledger_manifest(
+        tmp_path / "releaseledger" / "manifest.json",
+        release_title=hostile_title,
     )
     output_dir = tmp_path / "handoff"
 
@@ -348,8 +331,8 @@ def test_handoff_cli_escapes_active_markdown_from_a_valid_proof_packet(
             [
                 "handoff",
                 str(proof_dir),
-                "--mastergate",
-                str(mastergate_path),
+                "--releaseledger",
+                str(releaseledger_path),
                 "--output",
                 str(output_dir),
             ]
@@ -368,8 +351,8 @@ def test_handoff_packet_states_compatible_manifest_provenance_boundary(
     proof = _proof_packet(synthetic_release)
     handoff = build_handoff(
         proof,
-        mastergate=load_mastergate_manifest(
-            _write_mastergate_manifest(tmp_path / "mastergate.json", sha256=_proof_track_sha(proof))
+        releaseledger=load_releaseledger_manifest(
+            _write_releaseledger_manifest(tmp_path / "releaseledger.json")
         ),
     )
 
@@ -379,7 +362,7 @@ def test_handoff_packet_states_compatible_manifest_provenance_boundary(
 
     for rendered in (payload["boundary"], markdown, html):
         assert "do not authenticate the producer" in rendered
-    assert "Mastergate-compatible v1 manifest capture" in html
+    assert "Releaseledger-compatible v1 manifest capture" in html
 
 
 def _write_proof_packet(release_dir: Path, output_dir: Path) -> Path:
@@ -387,43 +370,6 @@ def _write_proof_packet(release_dir: Path, output_dir: Path) -> Path:
     inspection = inspect_release(plan)
     report = make_report(plan, inspection, evaluate_release(plan, inspection))
     return write_packet(report, output_dir)
-
-
-def _write_mastergate_manifest(path: Path, *, sha256: str = "a" * 64) -> Path:
-    return _write_json(
-        path,
-        {
-            "contract": {
-                "assets": {"expected_files": ["01-track.wav"]},
-                "delivery": {
-                    "requirements_basis": "Local delivery contract",
-                    "title": "Synthetic delivery",
-                },
-                "format": {"bit_depth": 24, "channels": 2, "sample_rate_hz": 48_000},
-                "limits": {"max_sample_peak_dbfs": None, "reject_full_scale_samples": False},
-            },
-            "contract_source": {"filename": "delivery.toml", "sha256": "b" * 64},
-            "declared_file_checks_passed": True,
-            "errors": [],
-            "input": {"directory_name": "masters"},
-            "measurements": [
-                {
-                    "bit_depth": 24,
-                    "byte_size": 1234,
-                    "channels": 2,
-                    "duration_seconds": 1.0,
-                    "filename": "01-track.wav",
-                    "frame_count": 48_000,
-                    "full_scale_sample_count": 0,
-                    "sample_peak_dbfs": -1.0,
-                    "sample_rate_hz": 48_000,
-                    "sha256": sha256,
-                }
-            ],
-            "overall_delivery_verdict": "RENDERED - QC INCOMPLETE",
-            "schema_version": 1,
-        },
-    )
 
 
 def _write_releaseledger_manifest(
@@ -504,20 +450,12 @@ def _write_json(path: Path, payload: dict[str, object]) -> Path:
     return path
 
 
-def _sha256_file(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()
-
-
 def _proof_packet(release_dir: Path) -> Packet:
     plan = load_plan(release_dir)
     inspection = inspect_release(plan)
     report = make_report(plan, inspection, evaluate_release(plan, inspection))
     payload = report_payload(report)
     return Packet(proof_id=payload["proof_id"], payload=payload)
-
-
-def _proof_track_sha(proof: Packet) -> str:
-    return next(asset["sha256"] for asset in proof.payload["assets"] if asset["role"] == "track:1")
 
 
 def _proof_cover_asset(proof: Packet) -> dict:

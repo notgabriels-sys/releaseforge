@@ -25,7 +25,6 @@ from releaseforge.handoff import (
     build_handoff,
     handoff_exit_code,
     handoff_payload,
-    load_mastergate_manifest,
     load_releaseledger_manifest,
     write_handoff_packet,
 )
@@ -74,12 +73,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         output = Path(args.output) if args.output else None
         return _compare(Path(args.before), Path(args.after), as_json=args.as_json, output=output)
     if args.command == "handoff":
-        mastergate = Path(args.mastergate) if args.mastergate else None
         releaseledger = Path(args.releaseledger) if args.releaseledger else None
         coverforge = Path(args.coverforge) if args.coverforge else None
         return _handoff(
             Path(args.proof_packet),
-            mastergate=mastergate,
             releaseledger=releaseledger,
             coverforge=coverforge,
             output=Path(args.output),
@@ -148,9 +145,6 @@ def _parser() -> argparse.ArgumentParser:
         "handoff", help="write a local companion-evidence handoff packet"
     )
     handoff_parser.add_argument("proof_packet", help="proof packet directory or RELEASE_PROOF.json")
-    handoff_parser.add_argument(
-        "--mastergate", help="direct Mastergate-compatible version-1 manifest.json path"
-    )
     handoff_parser.add_argument(
         "--releaseledger", help="direct Releaseledger-compatible version-1 manifest.json path"
     )
@@ -232,26 +226,22 @@ def _compare(before: Path, after: Path, *, as_json: bool, output: Path | None) -
 def _handoff(
     proof_packet: Path,
     *,
-    mastergate: Path | None,
     releaseledger: Path | None,
     coverforge: Path | None,
     output: Path,
 ) -> int:
     """Create one local companion-evidence handoff packet from existing captures."""
-    if mastergate is None and releaseledger is None and coverforge is None:
+    if releaseledger is None and coverforge is None:
         _error("handoff requires at least one companion manifest")
         return 2
     try:
         proof = load_packet(proof_packet)
         handoff = build_handoff(
             proof,
-            mastergate=load_mastergate_manifest(mastergate) if mastergate else None,
             releaseledger=load_releaseledger_manifest(releaseledger) if releaseledger else None,
             coverforge=load_coverforge_manifest(coverforge) if coverforge else None,
         )
         protected_roots: tuple[Path, ...] = (_proof_packet_root(proof_packet),)
-        if mastergate is not None:
-            protected_roots += (mastergate.resolve().parent,)
         if releaseledger is not None:
             protected_roots += (releaseledger.resolve().parent,)
         if coverforge is not None:

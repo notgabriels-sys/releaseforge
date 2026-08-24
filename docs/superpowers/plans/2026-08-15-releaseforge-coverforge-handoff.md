@@ -16,7 +16,7 @@
 - Retain no Coverforge manifest path, slug, source/output filename, source media, output directory, or arbitrary finding/reason text in Releaseforge models or packets.
 - Treat all companion relationships as `captured_companion_manifest` evidence. Never claim ownership, rights, approval, external delivery, distributor acceptance, platform compliance, or release readiness.
 - Handoff output remains a new directory outside the proof packet and every selected companion manifest parent.
-- Keep existing Mastergate and Releaseledger input/output behavior unchanged.
+- Keep existing Releaseledger input/output behavior unchanged.
 - Use generated synthetic images and manifests only for tests; do not read, stage, change, or package user artwork.
 
 ---
@@ -251,7 +251,6 @@ class CoverforgeLinkage:
 def build_handoff(
     proof: Packet,
     *,
-    mastergate: MastergateManifest | None = None,
     releaseledger: ReleaseledgerManifest | None = None,
     coverforge: CoverforgeManifest | None = None,
 ) -> Handoff: ...
@@ -329,22 +328,19 @@ fields to `Handoff`; and extend the constructor path:
 
 ```python
 def build_handoff(..., coverforge: CoverforgeManifest | None = None) -> Handoff:
-    if mastergate is None and releaseledger is None and coverforge is None:
+    if releaseledger is None and coverforge is None:
         raise HandoffError("handoff requires at least one companion manifest")
-    mastergate_linkage, mastergate_findings = _reconcile_mastergate(proof, mastergate)
     releaseledger_alignment, releaseledger_findings = _reconcile_releaseledger(
         proof, releaseledger
     )
     coverforge_linkage, coverforge_findings = _reconcile_coverforge(proof, coverforge)
     return Handoff(
         proof=proof,
-        mastergate=mastergate,
         releaseledger=releaseledger,
         coverforge=coverforge,
-        mastergate_linkage=mastergate_linkage,
         releaseledger_alignment=releaseledger_alignment,
         coverforge_linkage=coverforge_linkage,
-        findings=tuple(mastergate_findings + releaseledger_findings + coverforge_findings),
+        findings=tuple(releaseledger_findings + coverforge_findings),
     )
 ```
 
@@ -488,13 +484,12 @@ handoff_parser.add_argument(
 
 coverforge = Path(args.coverforge) if args.coverforge else None
 
-if mastergate is None and releaseledger is None and coverforge is None:
+if releaseledger is None and coverforge is None:
     _error("handoff requires at least one companion manifest")
     return 2
 
 handoff = build_handoff(
     proof,
-    mastergate=load_mastergate_manifest(mastergate) if mastergate else None,
     releaseledger=load_releaseledger_manifest(releaseledger) if releaseledger else None,
     coverforge=load_coverforge_manifest(coverforge) if coverforge else None,
 )

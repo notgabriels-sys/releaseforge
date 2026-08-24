@@ -190,7 +190,7 @@ by design.
 Only after testing this core with actual release-folder workflows should the
 project consider:
 
-1. adapters for Coverforge, Mastergate, PressAssetbook, and Releaseledger;
+1. adapters for Coverforge, PressAssetbook, and Releaseledger;
 2. human approval capture that stays distinct from proof capture;
 3. maintained delivery profiles with dated source links and explicit update
    history;

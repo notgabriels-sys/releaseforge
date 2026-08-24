@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import math
 from collections.abc import Mapping
 from dataclasses import dataclass
 from html import escape
@@ -17,30 +16,6 @@ from releaseforge.coverforge import CoverforgeManifest
 
 class HandoffError(ValueError):
     """Raised when a companion handoff input is unsafe or unsupported."""
-
-
-@dataclass(frozen=True)
-class MastergateMeasurement:
-    """Safe captured PCM-WAV facts retained from one Mastergate manifest."""
-
-    filename: str
-    sha256: str
-    byte_size: int
-    sample_rate_hz: int
-    bit_depth: int
-    channels: int
-    frame_count: int
-    duration_seconds: float
-    sample_peak_dbfs: float | None
-    full_scale_sample_count: int
-
-
-@dataclass(frozen=True)
-class MastergateManifest:
-    """Safe facts captured from a schema-compatible Mastergate version-1 manifest."""
-
-    manifest_sha256: str
-    measurements: tuple[MastergateMeasurement, ...]
 
 
 @dataclass(frozen=True)
@@ -75,16 +50,6 @@ class HandoffFinding:
 
 
 @dataclass(frozen=True)
-class MastergateLinkage:
-    """The captured SHA-256 relationship between Releaseforge WAVs and Mastergate."""
-
-    state: str
-    matched_releaseforge_wav_roles: tuple[str, ...]
-    unmatched_releaseforge_wav_roles: tuple[str, ...]
-    unmatched_mastergate_measurement_hashes: tuple[str, ...]
-
-
-@dataclass(frozen=True)
 class ReleaseledgerAlignment:
     """The shared declared metadata relationship with a Releaseledger manifest."""
 
@@ -111,10 +76,8 @@ class Handoff:
     """One local comparison of validated Releaseforge and companion captures."""
 
     proof: Packet
-    mastergate: MastergateManifest | None
     releaseledger: ReleaseledgerManifest | None
     coverforge: CoverforgeManifest | None
-    mastergate_linkage: MastergateLinkage | None
     releaseledger_alignment: ReleaseledgerAlignment | None
     coverforge_linkage: CoverforgeLinkage | None
     findings: tuple[HandoffFinding, ...]
@@ -124,41 +87,6 @@ class Handoff:
         """Return true only when all selected captured relationships align."""
         return not self.findings
 
-
-_MASTERGATE_FIELDS = frozenset(
-    {
-        "contract",
-        "contract_source",
-        "declared_file_checks_passed",
-        "errors",
-        "input",
-        "measurements",
-        "overall_delivery_verdict",
-        "schema_version",
-    }
-)
-_MASTERGATE_CONTRACT_FIELDS = frozenset({"assets", "delivery", "format", "limits"})
-_MASTERGATE_ASSET_FIELDS = frozenset({"expected_files"})
-_MASTERGATE_DELIVERY_FIELDS = frozenset({"requirements_basis", "title"})
-_MASTERGATE_FORMAT_FIELDS = frozenset({"bit_depth", "channels", "sample_rate_hz"})
-_MASTERGATE_LIMIT_FIELDS = frozenset({"max_sample_peak_dbfs", "reject_full_scale_samples"})
-_MASTERGATE_CONTRACT_SOURCE_FIELDS = frozenset({"filename", "sha256"})
-_MASTERGATE_INPUT_FIELDS = frozenset({"directory_name"})
-_MASTERGATE_MEASUREMENT_FIELDS = frozenset(
-    {
-        "bit_depth",
-        "byte_size",
-        "channels",
-        "duration_seconds",
-        "filename",
-        "frame_count",
-        "full_scale_sample_count",
-        "sample_peak_dbfs",
-        "sample_rate_hz",
-        "sha256",
-    }
-)
-_MASTERGATE_VERDICT = "RENDERED - QC INCOMPLETE"
 
 _RELEASELEDGER_FIELDS = frozenset({"files", "release", "schema_version", "source", "tracks"})
 _RELEASELEDGER_RELEASE_FIELDS = frozenset(
@@ -177,36 +105,12 @@ _MARKDOWN_ESCAPES = str.maketrans(
 )
 _HANDOFF_BOUNDARY = (
     "This handoff records relationships between a validated Releaseforge proof packet "
-    "and selected local Mastergate-, Releaseledger-, or Coverforge-compatible manifest "
+    "and selected local Releaseledger- or Coverforge-compatible manifest "
     "captures. Schema recognition and a SHA-256 identify only the local manifest bytes "
     "supplied to this run; they do not authenticate the producer or prove an upstream build "
     "occurred. It does not establish current-file verification, approval, ownership, rights, "
     "external delivery, distributor acceptance, or release readiness."
 )
-
-
-def load_mastergate_manifest(path: Path | str) -> MastergateManifest:
-    """Load a passing schema-compatible Mastergate version-1 manifest without paths."""
-    payload, manifest_sha256 = _load_json_object(path, "Mastergate manifest")
-    _expect_exact_keys(payload, _MASTERGATE_FIELDS, "Mastergate manifest")
-    if payload["schema_version"] != 1:
-        raise HandoffError("Mastergate manifest schema_version must be 1")
-    if payload["declared_file_checks_passed"] is not True:
-        raise HandoffError("Mastergate manifest must record passing declared file checks")
-    if payload["overall_delivery_verdict"] != _MASTERGATE_VERDICT:
-        raise HandoffError("Mastergate manifest has an unsupported delivery verdict")
-    if not _string_list(payload["errors"], "Mastergate manifest errors") == ():
-        raise HandoffError("passing Mastergate manifest must not contain errors")
-
-    contract = _mapping(payload["contract"], "Mastergate manifest contract")
-    _expect_exact_keys(contract, _MASTERGATE_CONTRACT_FIELDS, "Mastergate manifest contract")
-    _parse_mastergate_contract(contract)
-    _parse_source_fingerprint(
-        payload["contract_source"], _MASTERGATE_CONTRACT_SOURCE_FIELDS, "Mastergate contract source"
-    )
-    _parse_named_input(payload["input"], "Mastergate input")
-    measurements = _parse_mastergate_measurements(payload["measurements"])
-    return MastergateManifest(manifest_sha256=manifest_sha256, measurements=measurements)
 
 
 def load_releaseledger_manifest(path: Path | str) -> ReleaseledgerManifest:
@@ -241,26 +145,22 @@ def load_releaseledger_manifest(path: Path | str) -> ReleaseledgerManifest:
 def build_handoff(
     proof: Packet,
     *,
-    mastergate: MastergateManifest | None = None,
     releaseledger: ReleaseledgerManifest | None = None,
     coverforge: CoverforgeManifest | None = None,
 ) -> Handoff:
     """Reconcile selected captured evidence without reading source media or paths."""
-    if mastergate is None and releaseledger is None and coverforge is None:
+    if releaseledger is None and coverforge is None:
         raise HandoffError("handoff requires at least one companion manifest")
 
-    mastergate_linkage, mastergate_findings = _reconcile_mastergate(proof, mastergate)
     releaseledger_alignment, releaseledger_findings = _reconcile_releaseledger(proof, releaseledger)
     coverforge_linkage, coverforge_findings = _reconcile_coverforge(proof, coverforge)
     return Handoff(
         proof=proof,
-        mastergate=mastergate,
         releaseledger=releaseledger,
         coverforge=coverforge,
-        mastergate_linkage=mastergate_linkage,
         releaseledger_alignment=releaseledger_alignment,
         coverforge_linkage=coverforge_linkage,
-        findings=tuple(mastergate_findings + releaseledger_findings + coverforge_findings),
+        findings=tuple(releaseledger_findings + coverforge_findings),
     )
 
 
@@ -275,7 +175,7 @@ def handoff_payload(handoff: Handoff) -> dict[str, Any]:
     if not isinstance(proof_assets, list):
         raise HandoffError("Releaseforge proof packet has no valid assets")
     payload: dict[str, Any] = {
-        "schema_version": 1,
+        "schema_version": 2,
         "boundary": _HANDOFF_BOUNDARY,
         "releaseforge": {
             "proof_id": handoff.proof.proof_id,
@@ -283,7 +183,6 @@ def handoff_payload(handoff: Handoff) -> dict[str, Any]:
             "decision": _proof_decision(handoff.proof),
             "captured_asset_count": len(proof_assets),
         },
-        "mastergate": _mastergate_payload(handoff),
         "releaseledger": _releaseledger_payload(handoff),
         "coverforge": _coverforge_payload(handoff),
         "findings": [
@@ -476,25 +375,6 @@ def write_handoff_packet(
     return output_path
 
 
-def _mastergate_payload(handoff: Handoff) -> dict[str, Any] | None:
-    if handoff.mastergate is None:
-        return None
-    assert handoff.mastergate_linkage is not None
-    linkage = handoff.mastergate_linkage
-    return {
-        "manifest_sha256": handoff.mastergate.manifest_sha256,
-        "captured_measurement_count": len(handoff.mastergate.measurements),
-        "linkage": {
-            "state": linkage.state,
-            "matched_releaseforge_wav_roles": list(linkage.matched_releaseforge_wav_roles),
-            "unmatched_releaseforge_wav_roles": list(linkage.unmatched_releaseforge_wav_roles),
-            "unmatched_mastergate_measurement_hashes": list(
-                linkage.unmatched_mastergate_measurement_hashes
-            ),
-        },
-    }
-
-
 def _releaseledger_payload(handoff: Handoff) -> dict[str, Any] | None:
     if handoff.releaseledger is None:
         return None
@@ -546,20 +426,6 @@ def _proof_decision(proof: Packet) -> dict[str, Any]:
 
 def _markdown_companion_lines(payload: dict[str, Any]) -> list[str]:
     lines: list[str] = []
-    mastergate = payload["mastergate"]
-    if mastergate is not None:
-        linkage = mastergate["linkage"]
-        lines.extend(
-            [
-                "### Mastergate-compatible v1 manifest capture",
-                "",
-                f"- Manifest SHA-256: `{mastergate['manifest_sha256']}`",
-                f"- Captured measurements: {mastergate['captured_measurement_count']}",
-                f"- Captured WAV linkage: {_markdown_value(linkage['state'])}",
-                f"- Matched Releaseforge WAV roles: {_markdown_value(linkage['matched_releaseforge_wav_roles'])}",
-                f"- Unmatched Releaseforge WAV roles: {_markdown_value(linkage['unmatched_releaseforge_wav_roles'])}",
-            ]
-        )
     releaseledger = payload["releaseledger"]
     if releaseledger is not None:
         alignment = releaseledger["alignment"]
@@ -605,16 +471,6 @@ def _markdown_companion_lines(payload: dict[str, Any]) -> list[str]:
 
 def _html_companion_rows(payload: dict[str, Any]) -> list[str]:
     rows: list[str] = []
-    mastergate = payload["mastergate"]
-    if mastergate is not None:
-        linkage = mastergate["linkage"]
-        rows.append(
-            _html_row(
-                "Mastergate-compatible v1 manifest capture",
-                mastergate["manifest_sha256"],
-                f"{linkage['state']}; matched WAV roles: {', '.join(linkage['matched_releaseforge_wav_roles']) or 'none'}",
-            )
-        )
     releaseledger = payload["releaseledger"]
     if releaseledger is not None:
         alignment = releaseledger["alignment"]
@@ -737,68 +593,6 @@ def _reconcile_coverforge(
             mismatched_source_fields=tuple(mismatched_fields),
             skipped_target_keys=skipped_target_keys,
             over_size_cap_target_keys=over_size_cap_target_keys,
-        ),
-        findings,
-    )
-
-
-def _reconcile_mastergate(
-    proof: Packet, mastergate: MastergateManifest | None
-) -> tuple[MastergateLinkage | None, list[HandoffFinding]]:
-    if mastergate is None:
-        return None, []
-    wav_assets = _proof_wav_assets(proof)
-    if not wav_assets:
-        return (
-            MastergateLinkage(
-                state="not_applicable",
-                matched_releaseforge_wav_roles=(),
-                unmatched_releaseforge_wav_roles=(),
-                unmatched_mastergate_measurement_hashes=(),
-            ),
-            [],
-        )
-
-    measurement_hashes = {measurement.sha256 for measurement in mastergate.measurements}
-    proof_hashes = {sha256 for _, sha256 in wav_assets}
-    matched_roles = tuple(role for role, sha256 in wav_assets if sha256 in measurement_hashes)
-    unmatched_roles = tuple(role for role, sha256 in wav_assets if sha256 not in measurement_hashes)
-    unmatched_measurements = tuple(
-        sorted({measurement.sha256 for measurement in mastergate.measurements} - proof_hashes)
-    )
-    findings = [
-        HandoffFinding(
-            code="mastergate_wav_hash_unmatched",
-            severity="needs_evidence",
-            evidence_category="captured_companion_manifest",
-            subject=role,
-            message=(
-                "No identical captured Mastergate SHA-256 value was found for this "
-                "Releaseforge WAV asset. Review the intended handoff relationship."
-            ),
-        )
-        for role in unmatched_roles
-    ]
-    if not unmatched_roles:
-        findings.extend(
-            HandoffFinding(
-                code="mastergate_measurement_hash_unmatched",
-                severity="needs_evidence",
-                evidence_category="captured_companion_manifest",
-                subject="mastergate",
-                message=(
-                    "A captured Mastergate measurement SHA-256 value did not match a "
-                    "Releaseforge WAV asset. Review the intended handoff relationship."
-                ),
-            )
-            for _ in unmatched_measurements
-        )
-    return (
-        MastergateLinkage(
-            state="aligned" if not findings else "needs_evidence",
-            matched_releaseforge_wav_roles=matched_roles,
-            unmatched_releaseforge_wav_roles=unmatched_roles,
-            unmatched_mastergate_measurement_hashes=unmatched_measurements,
         ),
         findings,
     )
@@ -928,24 +722,6 @@ def _proof_cover(proof: Packet) -> dict[str, Any]:
     }
 
 
-def _proof_wav_assets(proof: Packet) -> tuple[tuple[str, str], ...]:
-    assets = proof.payload.get("assets")
-    if not isinstance(assets, list):
-        raise HandoffError("Releaseforge proof packet has no valid assets")
-    wav_assets: list[tuple[str, str]] = []
-    for asset in assets:
-        if not isinstance(asset, dict):
-            raise HandoffError("Releaseforge proof packet asset must be an object")
-        if asset.get("extension") != ".wav":
-            continue
-        role = asset.get("role")
-        sha256 = asset.get("sha256")
-        if not isinstance(role, str):
-            raise HandoffError("Releaseforge proof packet WAV asset has no valid role")
-        wav_assets.append((role, _sha256(sha256, "Releaseforge proof packet WAV SHA-256")))
-    return tuple(wav_assets)
-
-
 def _proof_release(proof: Packet) -> dict[str, str]:
     release = proof.payload.get("release")
     if not isinstance(release, dict):
@@ -995,79 +771,11 @@ def _load_json_object(path: Path | str, label: str) -> tuple[dict[str, Any], str
     return payload, hashlib.sha256(raw).hexdigest()
 
 
-def _parse_mastergate_contract(contract: dict[str, Any]) -> None:
-    assets = _mapping(contract["assets"], "Mastergate manifest contract.assets")
-    _expect_exact_keys(assets, _MASTERGATE_ASSET_FIELDS, "Mastergate manifest contract.assets")
-    expected_files = _string_list(assets["expected_files"], "Mastergate expected files")
-    if not expected_files:
-        raise HandoffError("Mastergate expected files must be bare WAV filenames")
-    for expected_file in expected_files:
-        _bare_wav_filename(expected_file, "Mastergate expected file")
-
-    delivery = _mapping(contract["delivery"], "Mastergate manifest contract.delivery")
-    _expect_exact_keys(
-        delivery, _MASTERGATE_DELIVERY_FIELDS, "Mastergate manifest contract.delivery"
-    )
-    _nonblank_string(delivery["requirements_basis"], "Mastergate requirements basis")
-    _nonblank_string(delivery["title"], "Mastergate delivery title")
-
-    audio_format = _mapping(contract["format"], "Mastergate manifest contract.format")
-    _expect_exact_keys(
-        audio_format, _MASTERGATE_FORMAT_FIELDS, "Mastergate manifest contract.format"
-    )
-    _positive_int(audio_format["bit_depth"], "Mastergate bit depth")
-    _positive_int(audio_format["channels"], "Mastergate channels")
-    _positive_int(audio_format["sample_rate_hz"], "Mastergate sample rate")
-
-    limits = _mapping(contract["limits"], "Mastergate manifest contract.limits")
-    _expect_exact_keys(limits, _MASTERGATE_LIMIT_FIELDS, "Mastergate manifest contract.limits")
-    _optional_number(limits["max_sample_peak_dbfs"], "Mastergate max sample peak")
-    if not isinstance(limits["reject_full_scale_samples"], bool):
-        raise HandoffError("Mastergate reject_full_scale_samples must be boolean")
-
-
 def _parse_source_fingerprint(value: Any, fields: frozenset[str], label: str) -> None:
     source = _mapping(value, label)
     _expect_exact_keys(source, fields, label)
     _bare_filename(source["filename"], f"{label} filename")
     _sha256(source["sha256"], f"{label} SHA-256")
-
-
-def _parse_named_input(value: Any, label: str) -> None:
-    input_value = _mapping(value, label)
-    _expect_exact_keys(input_value, _MASTERGATE_INPUT_FIELDS, label)
-    _bare_filename(input_value["directory_name"], f"{label} directory name")
-
-
-def _parse_mastergate_measurements(value: Any) -> tuple[MastergateMeasurement, ...]:
-    if not isinstance(value, list) or not value:
-        raise HandoffError("Mastergate measurements must be a non-empty list")
-    measurements: list[MastergateMeasurement] = []
-    for index, raw_measurement in enumerate(value, start=1):
-        label = f"Mastergate measurement {index}"
-        measurement = _mapping(raw_measurement, label)
-        _expect_exact_keys(measurement, _MASTERGATE_MEASUREMENT_FIELDS, label)
-        measurements.append(
-            MastergateMeasurement(
-                filename=_bare_wav_filename(measurement["filename"], f"{label} filename"),
-                sha256=_sha256(measurement["sha256"], f"{label} SHA-256"),
-                byte_size=_positive_int(measurement["byte_size"], f"{label} byte size"),
-                sample_rate_hz=_positive_int(measurement["sample_rate_hz"], f"{label} sample rate"),
-                bit_depth=_positive_int(measurement["bit_depth"], f"{label} bit depth"),
-                channels=_positive_int(measurement["channels"], f"{label} channels"),
-                frame_count=_positive_int(measurement["frame_count"], f"{label} frame count"),
-                duration_seconds=_nonnegative_number(
-                    measurement["duration_seconds"], f"{label} duration"
-                ),
-                sample_peak_dbfs=_optional_number(
-                    measurement["sample_peak_dbfs"], f"{label} sample peak"
-                ),
-                full_scale_sample_count=_nonnegative_int(
-                    measurement["full_scale_sample_count"], f"{label} full-scale count"
-                ),
-            )
-        )
-    return tuple(measurements)
 
 
 def _parse_releaseledger_tracks(value: Any) -> tuple[ReleaseledgerTrack, ...]:
@@ -1106,12 +814,6 @@ def _expect_exact_keys(mapping: dict[str, Any], expected: frozenset[str], label:
         raise HandoffError(f"{label} is missing a required field")
 
 
-def _string_list(value: Any, label: str) -> tuple[str, ...]:
-    if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
-        raise HandoffError(f"{label} must be a list of strings")
-    return tuple(value)
-
-
 def _nonblank_string(value: Any, label: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise HandoffError(f"{label} must be a non-empty string")
@@ -1130,27 +832,6 @@ def _positive_int(value: Any, label: str) -> int:
     return value
 
 
-def _nonnegative_int(value: Any, label: str) -> int:
-    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
-        raise HandoffError(f"{label} must be a non-negative integer")
-    return value
-
-
-def _optional_number(value: Any, label: str) -> float | None:
-    if value is None:
-        return None
-    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
-        raise HandoffError(f"{label} must be a finite number or null")
-    return float(value)
-
-
-def _nonnegative_number(value: Any, label: str) -> float:
-    parsed = _optional_number(value, label)
-    if parsed is None or parsed < 0:
-        raise HandoffError(f"{label} must be a non-negative finite number")
-    return parsed
-
-
 def _sha256(value: Any, label: str) -> str:
     if not isinstance(value, str) or len(value) != 64:
         raise HandoffError(f"{label} must be a lowercase SHA-256 string")
@@ -1161,13 +842,6 @@ def _sha256(value: Any, label: str) -> str:
     if value != value.lower():
         raise HandoffError(f"{label} must be a lowercase SHA-256 string")
     return value
-
-
-def _bare_wav_filename(value: Any, label: str) -> str:
-    filename = _bare_filename(value, label)
-    if not filename.lower().endswith(".wav"):
-        raise HandoffError(f"{label} must be a bare WAV filename")
-    return filename
 
 
 def _bare_filename(value: Any, label: str) -> str:
